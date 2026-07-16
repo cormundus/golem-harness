@@ -1,0 +1,10 @@
+# normalize line endings; shell scripts MUST stay LF or they break on Linux/macOS
+* text=auto
+*.sh text eol=lf
+*.js text
+*.md text
+*.json text
+*.py text
+*.patch text eol=lf
+*.tar.gz binary
+*.png binary
