@@ -22,8 +22,11 @@ every system below exists because the game demanded it.
   (`http://localhost:3001`, prismarine-viewer) so humans can watch, and a `/snapshot` PNG camera the
   model itself can read.
 
-If you are a **language model about to drive this bot**, go read **`DRIVING.md`** — it is written for
-you. This README explains to humans what the thing is and how it works.
+If you are a **language model about to drive this bot**, go read **`DRIVING.md`** — it is written
+for you, and it is deliberately lean (~4K tokens: laws, verbs, checklist) because you'll be loading
+it into context every session. The long-form companion, **`FIELD-GUIDE.md`**, holds the worked
+examples and field stories — `grep` it on demand, don't load it whole. This README explains to
+humans what the thing is and how it works.
 
 > **Alpha V1 — Overworld verified only.** Everything documented here has been played for real:
 > mining, building, farming, husbandry, ranged and melee combat, night survival on Normal
@@ -198,7 +201,7 @@ Two ways in:
 table that *must match your server version exactly* — the published minecraft-data table for 1.21.11
 is misordered, so this repo ships a corrected `sounds-1.21.11.json` generated from the game's own
 data generator (the bot pins it automatically on 1.21.11). On other modern versions, hearings may
-misidentify species until you regenerate the table for your version — the recipe is in `DRIVING.md`.
+misidentify species until you regenerate the table for your version — the recipe is in `FIELD-GUIDE.md`.
 We learned this because a pig oinking near the coop was heard as a phantom for three days.
 
 **Requires your own copy of Minecraft: Java Edition.** Minecraft is a trademark of Mojang/Microsoft;
