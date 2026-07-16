@@ -1,4 +1,4 @@
-// Claude's Mineflayer control bot
+// Golem — a Mineflayer body for language-model pilots
 // Doing-layer: structured perception + actions over a tiny HTTP API (drive with curl).
 const mineflayer = require('mineflayer')
 const { pathfinder, Movements, goals } = require('mineflayer-pathfinder')
@@ -3496,7 +3496,7 @@ app.get('/boot', (req, res) => {
       return it ? { slot: armorNames[i], name: it.name } : null
     }).filter(Boolean)
     const summary =
-      `Claude @ (${Math.floor(pos.x)},${Math.floor(pos.y)},${Math.floor(pos.z)}), HP ${bot.health}/20, food ${bot.food}/20, ` +
+      `${bot.username || 'bot'} @ (${Math.floor(pos.x)},${Math.floor(pos.y)},${Math.floor(pos.z)}), HP ${bot.health}/20, food ${bot.food}/20, ` +
       `holding ${held ? held.name + (held.durability != null ? ` (${held.durability}/${held.maxDurability})` : '') : 'nothing'}. ` +
       (armor.length ? `Wearing: ${armor.map(a => a.name + ' (' + a.slot + ')').join(', ')}. ` : 'No armor worn. ') +
       ((bot.inventory.slots[45] && bot.inventory.slots[45].name) ? `Offhand: ${bot.inventory.slots[45].name}. ` : '') +

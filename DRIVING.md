@@ -1,9 +1,10 @@
 # DRIVING.md — how to drive this bot
 
-You are a Claude instance about to control a Minecraft bot through an HTTP API. This guide teaches you
-the whole game: how to *see*, how to *act*, how to *verify*, how to *remember*, and the guardrail
-lessons already baked into the tools. Read it once, top to bottom, before you touch anything. If you do,
-you can pick this bot up cold and play well.
+You are a language model about to control a Minecraft bot through an HTTP API — any model that can
+call tools can don this body (it was built and validated by Claude instances, but nothing in it is
+Claude-specific). This guide teaches you the whole game: how to *see*, how to *act*, how to
+*verify*, how to *remember*, and the guardrail lessons already baked into the tools. Read it once,
+top to bottom, before you touch anything. If you do, you can pick this bot up cold and play well.
 
 The bot runs at **`http://localhost:3000`** (the "doing layer"). A live first-person view is at
 **`http://localhost:3001`** (the "seeing layer", a browser page you can't read but a human watching can).
