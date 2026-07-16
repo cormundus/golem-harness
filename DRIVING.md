@@ -373,13 +373,20 @@ response is JSON with an `ok` boolean.
 | `/useon`     | `name item`                         | Right-click a creature with an item: shears on sheep, bucket on cow. The husbandry verb. |
 | `/toss`      | `name count to`                     | Drop items — `to=<player>` throws them toward a teammate (the GIVE verb). |
 | `/eat`       | —                                   | Eat held-able food from inventory. Fails silently if a job owns the hand — eat between jobs. |
+| `/fish`      | `count x y z`                       | Cast the fishing rod as a background job (`count` casts, ≤32). `x y z` aims at a WATER cell you can see; omit to cast along current facing. Each catch is named by pocket-diff and emitted as an event. `/job_stop` lands between casts. |
 | `/strike`    | `name item`                         | ⚔️ One deliberate, fully-charged melee swing (default iron_sword). Approaches to reach. Refuses players and creeper-melee, always. Also the livestock-culling verb. |
 | `/shoot`     | `name`                              | ⚔️ Bow: draw, hold full charge (~1.1s), loose. No approach — shoot from where you stand, LOS ≤25. Refuses players; creepers explicitly allowed (ranged IS the anti-creeper doctrine). |
 | `/guard`     | `on`                                | ⚔️ Raise (`on=1`) / lower (`on=0`) the offhand shield — manual posture for walking scary ground. The combat reflex manages it automatically in fights. |
 | `/where`     | `name`                              | Player locator: live position or last-seen breadcrumb + bearing. Defaults to `MC_OWNER` env. |
 | `/blockat`   | `x y z`                             | Name + full block state (facing/half/open/age) of one seen block. The self-verification sense — read, don't assume. |
 | `/climb`     | —                                   | Mount and ascend a nearby ladder to its top. (Descent: `/come` to someone below, or walk the column.) |
-| `/reflexes`  | `name on`                           | List the always-on reflex layer (combat, unstuck, current_watch, narrator) or toggle one. Combat stays ON in a hostile world. |
+| `/reflexes`  | `name on`                           | List the always-on reflex layer (combat, unstuck, current_watch, narrator, trek) or toggle one. Combat stays ON in a hostile world. |
+
+Two ambient senses ride along without verbs: the **trek sense** (`trek` reflex) fingerprints the
+country every ~20 blocks of travel — biome, terrain classes along the direction of motion, built
+blocks in the wild — and emits one `[event] scan` line only when the picture *changes* (silence
+means same country, not "didn't look"); and the **pocket alarm** warns once at ≤4 free inventory
+slots and again at zero (full pockets make pickups fail *silently* — bank or `/toss` before looting).
 
 ### 👁️ Seeing — perceive the world
 | Endpoint    | Params            | Gives |

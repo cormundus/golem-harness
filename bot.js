@@ -223,6 +223,12 @@ bot.once('spawn', () => {
         if (warnedMobs.has(en.id)) return
         const d = en.position.distanceTo(bot.entity.position)
         if (d <= 16) {
+          // FAIRNESS (07-16, caught from inside a sealed night shelter: this alarm quoted live
+          // distances to skeletons through the dirt wall — raw-entity x-ray, the same leak-class
+          // as the combat watcher's). A distance-quoting alarm is SIGHT-class perception: shared
+          // air required (sealed hostiles may still be HEARD — ears are server-fair). NOT marked
+          // warned when gated, so the alarm still fires the moment the wall opens.
+          try { if (!entityPerceptible(en, airFlood({ radius: 20, cap: 8000 }))) return } catch (e) {}
           warnedMobs.add(en.id)
           emitEvent('hostile', `${nm} within ${d.toFixed(1)} blocks`, { mob: nm, id: en.id, pos: round(en.position), dist: +d.toFixed(1) })
         }
@@ -922,6 +928,10 @@ function floodPassable(b) {
   if (!b) return false                                        // unloaded/unknown = wall, stay honest
   if (b.name.includes('lava')) return false
   if (b.name.includes('door') || b.name.includes('gate')) return true
+  // climbables (07-16): mc-data boxes ladders as solid, so the flood read every ladder shaft as
+  // WALLED and the goto precheck refused descents the planner itself walks fine (found live 07-15
+  // — /come had to smuggle the bot down its own attic ladder). A body passes a ladder cell.
+  if (b.name === 'ladder' || b.name === 'scaffolding' || b.name === 'vine' || b.name.includes('vines')) return true
   return blockTransparent(b)
 }
 function airFlood({ seed = null, radius = 24, cap = 15000, targets = null } = {}) {
@@ -1031,6 +1041,72 @@ function raySweep({ yaw = null, pitch = null, hFov = 1.75, vFov = 1.05, hSteps =
   }
   return { hits, misses, rays: hSteps * vSteps, yaw: cy, pitch: cp, maxDist }
 }
+
+// ---- TREK SENSE (07-16, designed trail-side with the helmsman: "spot the environment as it
+// changes and point out some things" on long ranges). The passenger-window sense: while the body
+// TRAVELS, sweep the retina along the direction of MOTION every ~20 blocks and fingerprint the
+// country — biome, terrain classes in view, and BUILT blocks out in the wild. Speak ONE compact
+// [event] scan line ONLY when the fingerprint CHANGES (throttled 15s). Silence = same country,
+// not "didn't look". Fair by construction: the same eye-rays /gaze uses, no new channel. Pushed
+// LAST so combat/unstuck always outrank sightseeing; sensing only, never touches the controls.
+reflexes.push({
+  name: 'trek', on: true, active: false,
+  _lastPos: null, _fp: null, _lastSayT: 0,
+  check (bot) {
+    try {
+      const p = bot.entity.position
+      if (this._lastPos && p.distanceTo(this._lastPos) < 20) return false
+      let moving = false
+      try { moving = bot.pathfinder.isMoving() || !!bot.pathfinder.goal } catch (e) {}
+      if (!moving) { this._lastPos = p.clone(); return false }   // parked: keep the anchor fresh, stay quiet
+      return true
+    } catch (e) { return false }
+  },
+  async act (bot) {
+    try {
+      const p = bot.entity.position
+      const from = this._lastPos
+      this._lastPos = p.clone()
+      let yaw = bot.entity.yaw                                   // sweep along MOTION, not the head
+      if (from) { const dx = p.x - from.x, dz = p.z - from.z; if (Math.hypot(dx, dz) > 2) yaw = Math.atan2(-dx, dz) }
+      const sweep = raySweep({ yaw, pitch: 0, maxDist: 96 })
+      const classes = new Set(); const built = new Set()
+      let builtSample = null
+      for (const h of sweep.hits) {
+        const cls = terrainClass(h.name)
+        classes.add(cls)
+        if (cls === 'structure' && !h.name.includes('torch')) {
+          built.add(h.name)
+          if (!builtSample || h.dist < builtSample.dist) builtSample = h
+        }
+      }
+      let biome = '?'
+      try { const b = bot.blockAt(p.floored()); if (b && b.biome && b.biome.name) biome = b.biome.name } catch (e) {}
+      const fp = { biome, cls: [...classes].sort().join('|'), built: [...built].sort().join('|') }
+      const prev = this._fp
+      this._fp = fp
+      const parts = []
+      if (!prev) parts.push(`trek baseline: ${biome.replace(/_/g, ' ')}; in view ${[...classes].join(', ') || 'nothing near'}`)
+      else {
+        if (fp.biome !== prev.biome) parts.push(`entering ${biome.replace(/_/g, ' ')}`)
+        const oldCls = new Set(prev.cls.split('|'))
+        const newCls = [...classes].filter(c => !oldCls.has(c))
+        if (newCls.length) parts.push(`now in view: ${newCls.join(', ')}`)
+        const oldBuilt = new Set(prev.built.split('|'))
+        const newBuilt = [...built].filter(b => !oldBuilt.has(b))
+        if (newBuilt.length && builtSample) {
+          let dir = ''
+          try { if (builtSample.pos) dir = ' ' + compass(builtSample.pos.x - p.x, builtSample.pos.z - p.z) } catch (e) {}
+          parts.push(`BUILT blocks${dir} ~${Math.round(builtSample.dist)}: ${newBuilt.slice(0, 3).join(', ')} — structure?`)
+        }
+      }
+      if (parts.length && Date.now() - this._lastSayT > 15000) {
+        this._lastSayT = Date.now()
+        emitEvent('scan', parts.join('; '))
+      }
+    } catch (e) {}
+  }
+})
 
 // ==== SECOND SENSES (2026-07-12, Fable) — ears, felt world-changes, body alarms, tool sense ====
 // Design constraints set by the helmsman: my reaction time is long, so alarms exist ONLY for what's worth
@@ -1233,6 +1309,20 @@ let lastHp = 20
 let lastPosSafe = null
 let lastHurtEmit = 0
 let lowFoodWarned = false
+// pocket-fullness sense (07-16, the helmsman's ask after the museum purge found ZERO free slots —
+// full pockets make pickups fail SILENTLY and stopped a dig mid-escape on 07-15). Same one-warning-
+// per-episode + hysteresis shape as the food alarm: say it once at "getting full" (≤4 free), once
+// more at FULL (0 free), re-arm only after real space opens up (≥6 free). Polled 5s — cheap.
+let pocketsWarned = 0                                   // 0 = quiet, 1 = warned "getting full", 2 = warned FULL
+setInterval(() => {
+  try {
+    if (!bot || !bot.inventory || !bot.entity) return
+    const empty = bot.inventory.emptySlotCount ? bot.inventory.emptySlotCount() : bot.inventory.slots.slice(9, 45).filter(s => !s).length
+    if (empty === 0 && pocketsWarned < 2) { pocketsWarned = 2; emitEvent('pockets', 'pockets FULL (0 free) — pickups now fail silently; bank or /toss before mining/looting') }
+    else if (empty <= 4 && empty > 0 && pocketsWarned < 1) { pocketsWarned = 1; emitEvent('pockets', `pockets getting full — ${empty} slots free`) }
+    else if (empty >= 6) pocketsWarned = 0
+  } catch (e) {}
+}, 5000)
 let lastAttrib = null            // set by the damage_event wire; read by the hurt handler above
 setInterval(() => {
   try {
@@ -1246,6 +1336,7 @@ bot.on('health', async () => {
   try {
     if (bot.health < lastHp - 0.5) {
       const dmg = +(lastHp - bot.health).toFixed(1)
+      lastHit = { dmg, t: Date.now() }                   // feeds the reflex's ADAPTIVE tripwire (death #2 lesson)
       // LAW AMENDED 07-14, built 07-15: hurt-FREEZE is for UNEXPLAINED damage only. When damage
       // attribution (damage_event wire below) has just named a living attacker, freezing is the
       // worst response — the combat reflex owns it; we only narrate.
@@ -1307,12 +1398,20 @@ bot.on('death', () => {
 // Doctrine constants: creepers are FLED never fought; players are NEVER weapons targets (debug window
 // lets the watcher SCORE a charging player, narrate-only, so the math is testable on Peaceful).
 const PROVOKABLE = new Set(['enderman', 'zombified_piglin', 'piglin', 'bee', 'wolf', 'polar_bear', 'llama', 'trader_llama', 'iron_golem', 'goat', 'panda'])
+// HEAVY MELEE (07-16, death #2 at the mansion: a vindicator hit 8.6 THROUGH full iron — 20→11→2.4
+// in two swings, and the flee fired at the old HP<8 tripwire, which against that math is already
+// posthumous). The reflex NEVER stands and trades with these — it kites like a creeper. Killing
+// them is deliberate work: pilot's bow, the helmsman's blade, a chokepoint. Survival is the
+// reflex's job, not victory.
+const HEAVY_MELEE = new Set(['vindicator', 'ravager', 'piglin_brute', 'wither_skeleton'])
 const AGGRO_CONFIRMED = new Map()          // entityId -> {name, t} — fed by damage attribution
 let threatDebugUntil = 0                   // /threatdebug window: score players, narrate only
+let lastHit = { dmg: 0, t: 0 }             // last hit taken (size + when) — scales the disengage tripwire while FRESH
 function mobClass (e) {
   if (!e || !e.name) return 'other'
   if (e.type === 'player' || (bot.players && Object.values(bot.players).some(p => p.entity === e))) return 'player'
   if (e.name === 'creeper') return 'creeper'
+  if (HEAVY_MELEE.has(e.name)) return 'heavy'
   if (PROVOKABLE.has(e.name)) return 'provokable'
   const d = mcData && mcData.entitiesByName[e.name]
   if (d && (d.type === 'hostile' || d.category === 'Hostile mobs')) return 'hostile'
@@ -1344,6 +1443,38 @@ bot.once('spawn', () => {
 reflexes.unshift({
   name: 'combat', on: true, active: false,
   _hist: new Map(), _lastNarrate: new Map(), _threat: null,
+  _fill: null, _fillT: 0, _fillSeed: null, _fleeUntil: 0,
+  // FLEE LATCH (07-16, the first-death autopsy: twelve 'disengaging' events, zero escape — every
+  // 300ms re-entry safeStop'd the previous flee goal and re-planned from scratch, so the body
+  // SHUFFLED IN PLACE while a same-speed drowned ate it 1.4 at a time. A flee is set ONCE, held
+  // 6s, and RUN at a sprint; re-entries bounce off the latch instead of resetting the goal.)
+  fleeFrom (bot, threatPos, why) {
+    const now = Date.now()
+    if (now < this._fleeUntil) return                    // a flee is already running — let it run
+    this._fleeUntil = now + 6000
+    try {
+      const here = bot.entity.position
+      const away = here.minus(threatPos).normalize().scaled(20)
+      safeStop()
+      bot.pathfinder.setGoal(new goals.GoalNear(here.x + away.x, here.y, here.z + away.z, 2))
+      bot.setControlState('sprint', true)
+      setTimeout(() => { try { bot.setControlState('sprint', false) } catch (e) {} }, 6000)
+    } catch (e) {}
+    if (why) emitEvent('combat', why)                    // ONE event per flee episode, not twelve
+  },
+  // FAIRNESS GATE fill (07-16, the confessed leak from the first Normal cave crawl): the watcher
+  // read raw bot.entities — server x-ray — and tracked a zombie through solid rock that /entities
+  // honestly hid. Same law as ore and eyes now: sealed behind rock = imperceptible; it may be
+  // HEARD (ears are server-fair) but never tracked, scored, or engaged. Lazy + cached ~2s so the
+  // 300ms loop only pays for the flood when a candidate actually needs judging.
+  fairFill (bot) {
+    const now = Date.now()
+    const seed = bot.entity.position.floored()
+    if (this._fill && now - this._fillT < 2000 && this._fillSeed && seed.distanceTo(this._fillSeed) < 3) return this._fill
+    this._fill = airFlood({ radius: 28, cap: 15000 })
+    this._fillT = now; this._fillSeed = seed
+    return this._fill
+  },
   check (bot) {
     try {
       const now = Date.now()
@@ -1354,11 +1485,15 @@ reflexes.unshift({
         const cls = mobClass(e)
         const confirmed = AGGRO_CONFIRMED.get(e.id)
         if (confirmed && now - confirmed.t > 45000) { AGGRO_CONFIRMED.delete(e.id); continue }
-        const scoreable = cls === 'hostile' || cls === 'creeper' || !!confirmed ||
+        const scoreable = cls === 'hostile' || cls === 'creeper' || cls === 'heavy' || !!confirmed ||
           (cls === 'player' && now < threatDebugUntil)
         if (!scoreable) continue
         const dist = e.position.distanceTo(here)
         if (dist > 24) { this._hist.delete(e.id); continue }
+        // confirmed attackers bypass the sight gate (whatever HIT me announced itself); everything
+        // else must share my connected air. History is kept, not wiped — brief occlusion mid-chase
+        // shouldn't amnesia the pursuit evidence, the sample just doesn't accrue while unseen.
+        if (!confirmed && !entityPerceptible(e, this.fairFill(bot))) continue
         const h = this._hist.get(e.id) || { d: dist, t: now, closes: 0, logT: 0 }
         const dt = (now - h.t) / 1000
         if (dt >= 0.25) {
@@ -1384,6 +1519,7 @@ reflexes.unshift({
   async act (bot) {
     const t = this._threat
     if (!t || !t.e || !bot.entities[t.e.id]) return
+    if (Date.now() < this._fleeUntil) return              // mid-flee: legs are busy, no melee, no goal resets
     const now = Date.now()
     const here = bot.entity.position
     const dir = compass(t.e.position.x - here.x, t.e.position.z - here.z)
@@ -1391,15 +1527,11 @@ reflexes.unshift({
     const narKey = t.e.id
     if (now - (this._lastNarrate.get(narKey) || 0) > 8000) {
       this._lastNarrate.set(narKey, now)
-      emitEvent('threat', `${label} ${dir} ~${Math.round(t.dist)} ${t.confirmed ? 'CONFIRMED (it hit me)' : 'closing fast'} — ${t.cls === 'creeper' ? 'FLEEING' : t.cls === 'player' ? 'debug: scoring only' : 'engaging'}`)
+      emitEvent('threat', `${label} ${dir} ~${Math.round(t.dist)} ${t.confirmed ? 'CONFIRMED (it hit me)' : 'closing fast'} — ${t.cls === 'creeper' ? 'FLEEING' : t.cls === 'heavy' ? 'KITING (trades are fatal)' : t.cls === 'player' ? 'debug: scoring only' : 'engaging'}`)
     }
     if (t.cls === 'player') return                          // NEVER weapons on players — narrate only
-    if (t.cls === 'creeper') {                              // flee, always: away-vector, never fight
-      try {
-        const away = here.minus(t.e.position).normalize().scaled(16)
-        safeStop()
-        bot.pathfinder.setGoal(new goals.GoalNear(here.x + away.x, here.y, here.z + away.z, 2))
-      } catch (e) {}
+    if (t.cls === 'creeper' || t.cls === 'heavy') {         // flee, always: away-vector, never trade
+      this.fleeFrom(bot, t.e.position, null)               // threat narration above already says so
       return
     }
     // melee hostile: SHIELD POSTURE while it closes (the shield is a posture, not a parry —
@@ -1413,9 +1545,13 @@ reflexes.unshift({
     const t0 = Date.now()
     try {
       while (this.on && bot.entities[t.e.id] && Date.now() - t0 < 10000) {
-        if (bot.health < 8) {                                 // disengage law: sprint away, reflex re-fires if chased
-          emitEvent('combat', `HP ${bot.health} — disengaging from ${label}`)
-          try { const away = bot.entity.position.minus(t.e.position).normalize().scaled(20); safeStop(); bot.pathfinder.setGoal(new goals.GoalNear(here.x + away.x, here.y, here.z + away.z, 2)) } catch (e) {}
+        // ADAPTIVE disengage (death #2 lesson): the tripwire scales to the last hit taken while
+        // it's FRESH (20s) — after a 1.4 drowned it sits at the old 8; after an 8.6 vindicator it
+        // becomes "any hit landed = disengage NOW", because two more of those is a corpse. Stale
+        // hits stop counting so one bad fight doesn't leave the spine cowardly for the whole day.
+        const hitRef = Date.now() - lastHit.t < 20000 ? lastHit.dmg : 0
+        if (bot.health < Math.max(8, hitRef * 2.5)) {
+          this.fleeFrom(bot, t.e.position, `HP ${Math.round(bot.health * 10) / 10} — disengaging from ${label}, sprinting`)
           return
         }
         const d = t.e.position.distanceTo(bot.entity.position)
@@ -2090,7 +2226,7 @@ app.get('/chatlog', (req, res) => {
   const since = parseInt(req.query.since || '0')
   ok(res, { cursor: chatSeq, messages: chatLog.filter(m => m.id > since) })
 })
-app.get('/stop', (req, res) => { safeStop(); try { bot.clearControlStates() } catch {} ; const jobsCancelled = jobs.stopAll(); ok(res, { stopped: true, jobsCancelled }) })
+app.get('/stop', (req, res) => { try { stopFollow() } catch {} ; safeStop(); try { bot.clearControlStates() } catch {} ; const jobsCancelled = jobs.stopAll(); ok(res, { stopped: true, jobsCancelled }) })
 // GET /tidy — reclaim scaffolding the pathfinder left behind. Mines back every still-standing
 // scaffold block the bot placed while navigating (tracked in navPlaced), collecting the material,
 // leaving the world as it found it. ?dry=1 reports the pending count without mining.
@@ -2114,19 +2250,76 @@ app.get('/tidy', async (req, res) => {
 })
 app.get('/job_stop', (req, res) => { const stopped = jobs.stop(parseInt(req.query.id)); ok(res, { stopped }) })
 
-// continuous follow via pathfinder's dynamic GoalFollow (auto-repaths as target moves)
+// continuous follow via pathfinder's dynamic GoalFollow (auto-repaths as target moves).
+// SUPERVISED since 07-16: bare GoalFollow had no stall recovery — it wedged at the east door
+// twice (once mid-emergency; "you do tarry") while /goto's wedge drill sat one verb over.
+// A 400ms watcher now runs the same drill (stop → 700ms → doorwayCommit → re-arm) whenever the
+// bot stops progressing while the target is beyond range, and quietly re-acquires the target
+// entity when it drops out of tracking (one honest event, no alarm spam).
+let followState = null
+function stopFollow () {
+  if (!followState) return
+  try { clearInterval(followState.timer) } catch (e) {}
+  followState = null
+}
 app.get('/follow', (req, res) => {
   try {
     const name = req.query.name
     const range = parseInt(req.query.range || '2')
     const target = (bot.players[name] && bot.players[name].entity)
     if (!target) return err(res, new Error(`player '${name}' not in view (get closer or check name)`))
+    stopFollow()
     bot.pathfinder.setGoal(new goals.GoalFollow(target, range), true)
-    ok(res, { following: name, range })
+    const st = { name, range, lastPos: bot.entity.position.clone(), lastT: Date.now(), drilling: false, lostT: 0, warnT: 0 }
+    st.timer = setInterval(async () => {
+      if (followState !== st || st.drilling) return
+      try {
+        const ent = bot.players[st.name] && bot.players[st.name].entity
+        if (!ent) {                                    // target untracked (out of range / relogged)
+          if (!st.lostT) st.lostT = Date.now()
+          else if (st.lostT > 0 && Date.now() - st.lostT > 12000) {
+            st.lostT = -1                              // said it once; keep watching silently
+            emitEvent('follow', `lost sight of ${st.name} — holding until they're back in view`)
+          }
+          return
+        }
+        if (st.lostT) {                                // re-acquired: GoalFollow holds a dead entity ref, re-arm on the live one
+          st.lostT = 0
+          bot.pathfinder.setGoal(new goals.GoalFollow(ent, st.range), true)
+        }
+        const p = bot.entity.position
+        if (p.distanceTo(st.lastPos) >= 1.0) { st.lastPos = p.clone(); st.lastT = Date.now(); return }
+        if (ent.position.distanceTo(p) <= st.range + 1.5) { st.lastT = Date.now(); return }   // parked next to them = not a stall
+        if (Date.now() - st.lastT < 4500) return       // same patience as stagedGoto (doors-v2 lesson)
+        st.drilling = true                             // wedged while the target walks away — the drill
+        console.log('[follow] wedged — running the doorway drill')
+        try {
+          // HARD goal clear, not safeStop: GoalFollow is DYNAMIC — a stop leaves it set and the
+          // pathfinder resumes re-planning toward the target DURING the drill, fighting nudgeInto
+          // for the control states every tick (found live 07-16: same door, same drill — goto's
+          // drill crossed clean, follow's lost the threshold 3x. The legs need ONE owner.)
+          try { bot.pathfinder.setGoal(null) } catch (e) {}
+          try { bot.clearControlStates() } catch (e) {}
+          await new Promise(r => setTimeout(r, 700))
+          let crossed = false
+          try { crossed = await doorwayCommit() } catch (e) { console.log('[follow] drill error: ' + e.message) }
+          const live = followState === st && bot.players[st.name] && bot.players[st.name].entity
+          if (live) bot.pathfinder.setGoal(new goals.GoalFollow(live, st.range), true)
+          st.lastPos = bot.entity.position.clone(); st.lastT = Date.now()
+          if (crossed) console.log('[follow] through clean — following resumed')
+          else if (Date.now() - st.warnT > 30000) {    // drill keeps retrying ~5s; the EVENT stays rare
+            st.warnT = Date.now()
+            emitEvent('follow', `wedged following ${st.name} and the doorway drill did not clear it — may need help`)
+          }
+        } finally { st.drilling = false }
+      } catch (e) {}
+    }, 400)
+    followState = st
+    ok(res, { following: name, range, supervised: true })
   } catch (e) { err(res, e) }
 })
 app.get('/unfollow', (req, res) => {
-  try { bot.pathfinder.setGoal(null); bot.clearControlStates(); ok(res, { unfollowed: true }) } catch (e) { err(res, e) }
+  try { stopFollow(); bot.pathfinder.setGoal(null); bot.clearControlStates(); ok(res, { unfollowed: true }) } catch (e) { err(res, e) }
 })
 
 // lay a rectangular perimeter (foundation outline). Walks each border cell, finds the
@@ -2332,6 +2525,55 @@ app.get('/activate', async (req, res) => {
     await bot.waitForTicks(2)
     await bot.activateBlock(b)
     ok(res, { activated: b.name, at: { x, y, z }, properties: (bot.blockAt(new Vec3(x, y, z)) || b).getProperties() })
+  } catch (e) { err(res, e) }
+})
+
+// GET /fish?count=&x=&y=&z= — the rod verb (07-16, first cast day). Casts the held fishing_rod;
+// mineflayer's bot.fish() reels itself when the bobber bites. Aim: the given cell must be WATER
+// I can SEE (a player casts at water in view; waitForTicks(2) respects the tick race), else cast
+// along current facing. Background job like the dig verbs; each catch is named by pocket-diff and
+// emitted — bites land ~20-30s apart, well under alarm-economy spam. A /job_stop lands between
+// casts (an in-flight cast reels itself out on its own bite; fishing holds no pathfinder to stop).
+app.get('/fish', (req, res) => {
+  try {
+    if (!ready) return err(res, new Error('not ready'))
+    const Vec3 = require('vec3').Vec3
+    const count = Math.min(32, Math.max(1, parseInt(req.query.count || '1')))
+    if (!bot.inventory.items().find(i => i.name === 'fishing_rod')) return err(res, new Error('no fishing_rod in inventory'))
+    let aim = null
+    if ([req.query.x, req.query.y, req.query.z].every(v => v !== undefined)) {
+      const x = Math.floor(parseFloat(req.query.x)), y = Math.floor(parseFloat(req.query.y)), z = Math.floor(parseFloat(req.query.z))
+      const wb = bot.blockAt(new Vec3(x, y, z))
+      if (!wb || !wb.name.includes('water')) return err(res, new Error(`aim cell is ${wb ? wb.name : 'unloaded'} — point me at water`))
+      if (!canSeeBlock({ x, y, z }, 30)) return err(res, new Error('that water is not in my line of sight — walk to the bank first'))
+      aim = new Vec3(x + 0.5, y + 0.9, z + 0.5)
+    }
+    const pockets = () => { const m = {}; for (const it of bot.inventory.items()) m[it.name] = (m[it.name] || 0) + it.count; return m }
+    const { id } = jobs.start(`fish x${count}`, async (job) => {
+      const rod = bot.inventory.items().find(i => i.name === 'fishing_rod')
+      await bot.equip(rod, 'hand')
+      await bot.waitForTicks(13)                        // slot-change cooldown (the /strike lesson)
+      const caught = []
+      for (let i = 0; i < count; i++) {
+        if (job.cancelled) break
+        if (aim) { await bot.lookAt(aim, true); await bot.waitForTicks(2) }
+        const before = pockets()
+        try { await bot.fish() } catch (e) {
+          job.progress(`cast ${i + 1} failed: ${e.message}`)
+          emitEvent('fish', `cast failed — ${(e.message || '').slice(0, 60)}`)
+          break
+        }
+        await new Promise(r => setTimeout(r, 700))      // let the flying loot land in the pockets
+        const after = pockets()
+        const gained = Object.keys(after).filter(k => (after[k] || 0) > (before[k] || 0) && k !== 'fishing_rod')
+        const what = gained.length ? gained.map(k => `${k} x${after[k] - (before[k] || 0)}`).join(', ') : 'something (pockets full? nothing landed)'
+        caught.push(...gained)
+        job.progress(`${i + 1}/${count}: ${what}`)
+        emitEvent('fish', `caught ${what} (${i + 1}/${count})`)
+      }
+      return { caught }
+    })
+    ok(res, { job: id, casts: count, aimed: !!aim })
   } catch (e) { err(res, e) }
 })
 

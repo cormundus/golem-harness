@@ -207,24 +207,28 @@ this project is unaffiliated fan tooling in the long mineflayer tradition.
 ## Known sharp edges (alpha honesty)
 
 - **Overworld only.** Nether and End are unvisited by this harness; nothing there is verified.
-- **`/follow` is the weakest mover** — it lacks the stall recovery and doorway handling every other
-  travel verb has. It wedges at doors and tight steps; the fix is queued. Use `/come` hops or
-  `/goto_wp` when it misbehaves.
+- **`/follow` is supervised but still squeezes at one door shape** — a 400ms watcher detects wedges
+  and runs the same doorway drill `/goto` uses (found live: a dynamic follow goal must be hard-cleared
+  before the drill, or two systems fight for the legs). Residual: a door whose panel sits parallel to
+  the walk corridor leaves centimeters of clearance, and the drill aims for cell center; it recovers,
+  but sticks briefly. Free-band aiming is queued.
 - **The browser viewer never renders block entities** (beds, chests, signs — upstream limitation),
-  item drops render as magenta cubes, and very new (1.21.9+) flora may render as missing-texture.
-  The text senses are the authority; the camera is a witness with known biases.
-- **The combat watcher currently scores threats through walls** (it reads raw entity data — an
-  honesty bug, confessed the day it was found), and `/strike`/`/shoot` target from the same ungated
-  list. The fairness gate that the *eyes* obey is queued for the whole combat layer; until then, the
-  pilot's discipline is the gate (verify with `/entities` before engaging at range). The watcher also
-  only scores threats converging on the *bot* — defending a nearby human partner is designed but not
-  yet built.
+  item drops render as magenta cubes, and very new (1.21.9+) flora and banners render as
+  missing-texture boxes. The text senses are the authority; the camera is a witness with known biases.
+- **The combat layer now obeys the same fairness gate as the eyes** — the threat watcher and the
+  proximity alarm both require shared connected air (sealed hostiles may be *heard*, never tracked),
+  with one honest exception: an attacker that has landed a hit on the bot announced itself through
+  the server's own damage packet and is tracked while that aggro is fresh. `/strike`/`/shoot` still
+  target from an ungated list — pilot discipline is the gate there (verify with `/entities` first).
+  The watcher also only scores threats converging on the *bot* — defending a nearby human partner is
+  designed but not yet built.
+- **The reflex survives losing, by design.** It kites what it cannot trade with (creepers and
+  heavy hitters like vindicators), disengages on a tripwire that scales to the size of the last hit
+  taken, and sprints its retreats on a latched goal. It fights what it can, flees what it can't, and
+  narrates both. Killing the heavy things is deliberate pilot work.
 - **The `:3001` viewer is served by prismarine-viewer and may be visible on your LAN** (watch-only —
   it exposes the bot's view, not its controls). The control API binds loopback-only by default; see
   `BIND_HOST` in `.env.example` before changing that.
-- **Ladder shafts confuse the walkability precheck** (climbable blocks read as walls to the
-  flood-fill), so `/goto` may refuse a route the raw pathfinder can actually walk. `/come` bypasses
-  the precheck.
 
 **Requires your own copy of Minecraft: Java Edition.** Minecraft is a trademark of Mojang/Microsoft;
 this project is unaffiliated fan tooling in the long mineflayer tradition.
