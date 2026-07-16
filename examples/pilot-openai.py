@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Minimal reference pilot: any OpenAI-compatible endpoint driving the Claudiverse harness.
+"""Minimal reference pilot: any OpenAI-compatible endpoint driving the Golem harness.
 
     pip install openai requests
     export OPENAI_API_KEY=...                 # or your local server's token

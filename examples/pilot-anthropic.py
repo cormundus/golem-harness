@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Minimal reference pilot: Claude (Anthropic API) driving the Claudiverse harness.
+"""Minimal reference pilot: Claude (Anthropic API) driving the Golem harness.
 
     pip install anthropic requests
     export ANTHROPIC_API_KEY=...
