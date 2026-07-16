@@ -1,0 +1,31 @@
+# dependencies (patches/ re-applies our fixes via postinstall; the 1.21.11 viewer
+# bundles are a GitHub Release asset — see install-viewer.sh)
+node_modules/
+
+# environment / per-session state
+.env
+heartbeat_cursor.txt
+stop.flag
+*.log
+
+# world-specific memory — YOUR world will grow its own
+seen.json
+waypoints.json
+journal.md
+
+# camera output
+snapshot.png
+snapshot-crop.png
+screenshots/
+
+# local backups
+backups/
+
+# private logs of the first crew — not part of the harness
+journal-entries/
+chronicles/
+
+# internal migration notes
+MIGRATION.md
+npm-install.log
+__pycache__/

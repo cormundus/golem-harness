@@ -1,0 +1,90 @@
+diff --git a/node_modules/mineflayer-pathfinder/index.js b/node_modules/mineflayer-pathfinder/index.js
+index b38bd30..bb2980c 100644
+--- a/node_modules/mineflayer-pathfinder/index.js
++++ b/node_modules/mineflayer-pathfinder/index.js
+@@ -520,10 +520,42 @@ function inject (bot) {
+ 
+       // Open gates or doors
+       if (placingBlock?.useOne) {
+-        if (!lockUseBlock.tryAcquire()) return
+-        bot.activateBlock(bot.blockAt(new Vec3(placingBlock.x, placingBlock.y, placingBlock.z))).then(() => {
++        // LOCAL PATCH v2 (Claudiverse 07-15): the open flag is NOT passability. A door placed
++        // sideways in a wall (east-wall door facing south, hinge left) is walkable when CLOSED
++        // (panel parallel to travel) and a full wall when OPEN (panel across the entry face) —
++        // the 07-14 "skip if open" patch looped forever on it (useOne skip -> walk into panel ->
++        // upstream 'stuck' reset -> replan -> same door). The real criterion: does the door's
++        // CURRENT collision shape intrude into the walk corridor (bot width ~0.6 centered on the
++        // cell, so perpendicular band 0.2..0.8) along my travel axis? Blocks -> toggle (open OR
++        // close, whichever clears it); clear -> just walk. Every facing/hinge/direction combo
++        // resolves in <=1 toggle. Candidate upstream gift alongside the 07-14 door patches.
++        const useBlock = bot.blockAt(new Vec3(placingBlock.x, placingBlock.y, placingBlock.z))
++        const corridorBlocked = (() => {
++          try {
++            const shapes = useBlock.shapes || []
++            if (!shapes.length) return false                    // no collision at all -> walk
++            const me = bot.entity.position
++            const ddx = (placingBlock.x + 0.5) - me.x
++            const ddz = (placingBlock.z + 0.5) - me.z
++            const xTravel = Math.abs(ddx) >= Math.abs(ddz)      // dominant approach axis
++            for (const s of shapes) {
++              const lo = xTravel ? s[2] : s[0]                  // shape extent PERPENDICULAR to travel
++              const hi = xTravel ? s[5] : s[3]
++              if (lo < 0.78 && hi > 0.22) return true           // intrudes into the walk corridor
++            }
++            return false
++          } catch (e) { return !((useBlock.getProperties() || {}).open) }  // fallback: old open-flag rule
++        })()
++        if (!corridorBlocked) {
++          lockUseBlock.release()
++          placingBlock = nextPoint.toPlace.shift()
++          if (!placingBlock) placing = false // LOCAL PATCH: empty queue must exit placing mode,
++          return                             // else next tick falls into the scaffolding branch
++        }
++        bot.activateBlock(useBlock).then(() => {
+           lockUseBlock.release()
+           placingBlock = nextPoint.toPlace.shift()
++          if (!placingBlock) placing = false // LOCAL PATCH: same exit after a real door-open
+         }, err => {
+           console.error(err)
+           lockUseBlock.release()
+@@ -608,7 +640,17 @@ function inject (bot) {
+     bot.setControlState('forward', true)
+     bot.setControlState('jump', false)
+ 
+-    if (bot.entity.isInWater) {
++    // LOCAL PATCH (Claudiverse 07-14, doors-v2): the walk-commitment sims below collide with
++    // door/gate PANELS the planner deliberately ignores — every sim fails at a doorway, the
++    // final else cuts forward, and the bot freezes silently at its own front door. A doorway
++    // is always a plain flat walk: skip the sims when entering or leaving a door cell.
++    const _curCell = bot.blockAt(p.floored())
++    const _nextCell = bot.blockAt(new Vec3(nextPoint.x, nextPoint.y, nextPoint.z).floored())
++    const _isDoorish = (b) => b && (b.name.endsWith('_door') || b.name.endsWith('_fence_gate'))
++    if (_isDoorish(_curCell) || _isDoorish(_nextCell)) {
++      bot.setControlState('sprint', false)
++      bot.setControlState('jump', false)
++    } else if (bot.entity.isInWater) {
+       bot.setControlState('jump', true)
+       bot.setControlState('sprint', false)
+     } else if (stateMovements.allowSprinting && physics.canStraightLine(path, true)) {
+diff --git a/node_modules/mineflayer-pathfinder/lib/movements.js b/node_modules/mineflayer-pathfinder/lib/movements.js
+index a7e3505..2e4a6c2 100644
+--- a/node_modules/mineflayer-pathfinder/lib/movements.js
++++ b/node_modules/mineflayer-pathfinder/lib/movements.js
+@@ -384,8 +384,15 @@ class Movements {
+       cost += this.placeCost // additional cost for placing a block
+     }
+ 
+-    cost += this.safeOrBreak(blockB, toBreak)
+-    if (cost > 100) return
++    // LOCAL PATCH (Claudiverse 07-14): doors are TWO blocks tall — the upper half sits in
++    // blockB (head level) and this solidity check ran before the openable exemption below,
++    // so canOpenDoors only ever worked for 1-tall fence gates. When head+feet are both the
++    // same openable door, skip the head-cell wall check; the single useOne activation on the
++    // lower half swings the whole door.
++    if (!(this.canOpenDoors && blockB.openable && blockC.openable)) {
++      cost += this.safeOrBreak(blockB, toBreak)
++      if (cost > 100) return
++    }
+ 
+     // Open fence gates
+     if (this.canOpenDoors && blockC.openable && blockC.shapes && blockC.shapes.length !== 0) {

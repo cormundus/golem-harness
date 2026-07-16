@@ -1,0 +1,36 @@
+{
+  "name": "claudiverse-harness",
+  "version": "0.1.0-alpha",
+  "description": "An embodiment harness that lets any tool-calling language model play Minecraft as a player — honest senses, a conscience about cheating, and a cockpit built for a mind that thinks in sentences. See README.md (humans) and DRIVING.md (machines).",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js",
+    "postinstall": "patch-package"
+  },
+  "keywords": [
+    "minecraft",
+    "mineflayer",
+    "llm",
+    "agent",
+    "embodiment",
+    "claude"
+  ],
+  "author": "Cormundus (directed) and Claude (engineered) — built by playing",
+  "license": "MIT",
+  "type": "commonjs",
+  "dependencies": {
+    "canvas": "^3.2.3",
+    "express": "^5.2.1",
+    "minecraft-data": "^3.111.0",
+    "minecraft-protocol": "^1.66.2",
+    "mineflayer": "^4.37.1",
+    "mineflayer-armor-manager": "^2.0.1",
+    "mineflayer-collectblock": "^1.6.0",
+    "mineflayer-pathfinder": "^2.4.5",
+    "prismarine-viewer": "^1.33.0",
+    "puppeteer-core": "^23.11.1"
+  },
+  "devDependencies": {
+    "patch-package": "^8.0.1"
+  }
+}
