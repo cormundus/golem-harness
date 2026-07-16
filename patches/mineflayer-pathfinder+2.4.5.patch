@@ -1,5 +1,5 @@
 diff --git a/node_modules/mineflayer-pathfinder/index.js b/node_modules/mineflayer-pathfinder/index.js
-index b38bd30..bb2980c 100644
+index b38bd30..8382bd9 100644
 --- a/node_modules/mineflayer-pathfinder/index.js
 +++ b/node_modules/mineflayer-pathfinder/index.js
 @@ -520,10 +520,42 @@ function inject (bot) {
@@ -8,7 +8,7 @@ index b38bd30..bb2980c 100644
        if (placingBlock?.useOne) {
 -        if (!lockUseBlock.tryAcquire()) return
 -        bot.activateBlock(bot.blockAt(new Vec3(placingBlock.x, placingBlock.y, placingBlock.z))).then(() => {
-+        // LOCAL PATCH v2 (Claudiverse 07-15): the open flag is NOT passability. A door placed
++        // LOCAL PATCH v2 (Golem 07-15): the open flag is NOT passability. A door placed
 +        // sideways in a wall (east-wall door facing south, hinge left) is walkable when CLOSED
 +        // (panel parallel to travel) and a full wall when OPEN (panel across the entry face) —
 +        // the 07-14 "skip if open" patch looped forever on it (useOne skip -> walk into panel ->
@@ -52,7 +52,7 @@ index b38bd30..bb2980c 100644
      bot.setControlState('jump', false)
  
 -    if (bot.entity.isInWater) {
-+    // LOCAL PATCH (Claudiverse 07-14, doors-v2): the walk-commitment sims below collide with
++    // LOCAL PATCH (Golem 07-14, doors-v2): the walk-commitment sims below collide with
 +    // door/gate PANELS the planner deliberately ignores — every sim fails at a doorway, the
 +    // final else cuts forward, and the bot freezes silently at its own front door. A doorway
 +    // is always a plain flat walk: skip the sims when entering or leaving a door cell.
@@ -67,7 +67,7 @@ index b38bd30..bb2980c 100644
        bot.setControlState('sprint', false)
      } else if (stateMovements.allowSprinting && physics.canStraightLine(path, true)) {
 diff --git a/node_modules/mineflayer-pathfinder/lib/movements.js b/node_modules/mineflayer-pathfinder/lib/movements.js
-index a7e3505..2e4a6c2 100644
+index a7e3505..72aaf26 100644
 --- a/node_modules/mineflayer-pathfinder/lib/movements.js
 +++ b/node_modules/mineflayer-pathfinder/lib/movements.js
 @@ -384,8 +384,15 @@ class Movements {
@@ -76,7 +76,7 @@ index a7e3505..2e4a6c2 100644
  
 -    cost += this.safeOrBreak(blockB, toBreak)
 -    if (cost > 100) return
-+    // LOCAL PATCH (Claudiverse 07-14): doors are TWO blocks tall — the upper half sits in
++    // LOCAL PATCH (Golem 07-14): doors are TWO blocks tall — the upper half sits in
 +    // blockB (head level) and this solidity check ran before the openable exemption below,
 +    // so canOpenDoors only ever worked for 1-tall fence gates. When head+feet are both the
 +    // same openable door, skip the head-cell wall check; the single useOne activation on the

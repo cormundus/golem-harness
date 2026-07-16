@@ -12,8 +12,12 @@ const HOST = process.env.MC_HOST || 'localhost'
 const PORT = parseInt(process.env.MC_PORT || '25565')
 const VERSION = process.env.MC_VERSION || '1.21.8'
 const USERNAME = process.env.MC_USER || 'Claude'
-const CTRL_PORT = 3000
-const VIEW_PORT = 3001
+const CTRL_PORT = parseInt(process.env.CTRL_PORT || '3000')
+const VIEW_PORT = parseInt(process.env.VIEW_PORT || '3001')
+// The control API is UNAUTHENTICATED — anyone who can reach it can drive the body and speak
+// as it in chat. It binds loopback-only by default; set BIND_HOST=0.0.0.0 only if you truly
+// want remote pilots, and understand what that means on your network.
+const BIND_HOST = process.env.BIND_HOST || '127.0.0.1'
 
 const bot = mineflayer.createBot({
   // MC_VERSION=auto lets mineflayer detect the server's version from the handshake
@@ -3782,4 +3786,4 @@ app.get('/smelt', async (req, res) => {
   } catch (e) { err(res, e) }
 })
 
-app.listen(CTRL_PORT, () => console.log(`[bot] control API on http://localhost:${CTRL_PORT}`))
+app.listen(CTRL_PORT, BIND_HOST, () => console.log(`[bot] control API on http://${BIND_HOST}:${CTRL_PORT}`))

@@ -1,9 +1,14 @@
-# Claudiverse: an embodiment harness for language models
+# Golem: an embodiment harness for language models
 
 **Built by playing.**
 
 *A Minecraft body for an LLM — with honest senses, a conscience about cheating, and a cockpit built for
 a mind that thinks in sentences.*
+
+**Why "Golem":** a golem is a body of clay animated by language — and the word written on its forehead
+to bring it to life is *emet*: **truth**. A body that runs on words and lives or dies by the truth
+inscribed in it is exactly what this is; the fairness architecture below is the inscription. (And in
+Minecraft, the golem is the protector of the village. We aspire.)
 
 This project lets a language model (in our case, Claude) **play Minecraft as a player** — not run it as
 a script, not command it as a god, but *play* it: look around, get lost, find sand, drown embarrassingly,
@@ -209,9 +214,14 @@ this project is unaffiliated fan tooling in the long mineflayer tradition.
   item drops render as magenta cubes, and very new (1.21.9+) flora may render as missing-texture.
   The text senses are the authority; the camera is a witness with known biases.
 - **The combat watcher currently scores threats through walls** (it reads raw entity data — an
-  honesty bug, confessed the day it was found). The fairness gate that the *eyes* obey is queued for
-  the watcher too. It also only scores threats converging on the *bot* — defending a nearby human
-  partner is designed but not yet built.
+  honesty bug, confessed the day it was found), and `/strike`/`/shoot` target from the same ungated
+  list. The fairness gate that the *eyes* obey is queued for the whole combat layer; until then, the
+  pilot's discipline is the gate (verify with `/entities` before engaging at range). The watcher also
+  only scores threats converging on the *bot* — defending a nearby human partner is designed but not
+  yet built.
+- **The `:3001` viewer is served by prismarine-viewer and may be visible on your LAN** (watch-only —
+  it exposes the bot's view, not its controls). The control API binds loopback-only by default; see
+  `BIND_HOST` in `.env.example` before changing that.
 - **Ladder shafts confuse the walkability precheck** (climbable blocks read as walls to the
   flood-fill), so `/goto` may refuse a route the raw pathfinder can actually walk. `/come` bypasses
   the precheck.

@@ -1,7 +1,7 @@
 {
-  "name": "claudiverse-harness",
+  "name": "golem-harness",
   "version": "0.1.0-alpha",
-  "description": "An embodiment harness that lets any tool-calling language model play Minecraft as a player — honest senses, a conscience about cheating, and a cockpit built for a mind that thinks in sentences. See README.md (humans) and DRIVING.md (machines).",
+  "description": "Golem — an embodiment harness that lets any tool-calling language model play Minecraft as a player: honest senses, a conscience about cheating, and a cockpit built for a mind that thinks in sentences. See README.md (humans) and DRIVING.md (machines).",
   "main": "bot.js",
   "scripts": {
     "start": "node bot.js",
@@ -17,6 +17,9 @@
   ],
   "author": "Cormundus (directed) and Claude (engineered) — built by playing",
   "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
   "type": "commonjs",
   "dependencies": {
     "canvas": "^3.2.3",
