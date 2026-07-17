@@ -2941,7 +2941,7 @@ app.get('/map', (req, res) => {
     const Vec3 = require('vec3').Vec3
     let radius = parseInt(req.query.radius || '12')
     if (!Number.isFinite(radius) || radius < 1) radius = 12
-    if (radius > 128) radius = 128                        // farther sight allowed; use scale to keep it cheap
+    if (radius > 256) radius = 256                        // the 07-13 agreement: 16 chunks of sight; scale keeps it cheap
     let scale = parseInt(req.query.scale || '1')          // blocks per cell; >1 = zoomed-out survey
     if (!Number.isFinite(scale) || scale < 1) scale = 1
     while ((2 * Math.floor(radius / scale) + 1) > 121) scale++   // cap grid side ~121 cells (readable/cheap)
@@ -3069,14 +3069,17 @@ app.get('/scene', (req, res) => {
       ? entPhrases.join('; ') + (threats.length ? '' : '; no hostiles')
       : 'no entities near'
 
-    // nearest notable resources via findBlock (direction + distance)
+    // nearest notable resources via findBlock (direction + distance). 64 not 48: the old 48 here
+    // outlived the 07-14 gaze upgrade and kept announcing itself in every glance — the "48-block
+    // visual limit" the helmsman kept re-reporting was mostly THIS sentence.
+    const SCENE_RESOURCE_R = 64
     const notable = {}
     const wants = { water: 'water', oak_log: 'oak_log', stone: 'stone' }
     try {
       for (const [label, blockName] of Object.entries(wants)) {
         const ids = resolveBlockIds(blockName)
         if (!ids.length) continue
-        const b = nearestVisible(ids, 48)
+        const b = nearestVisible(ids, SCENE_RESOURCE_R)
         if (b) {
           const d = pos.distanceTo(b.position)
           notable[label] = { dir: compass(b.position.x - pos.x, b.position.z - pos.z), dist: +d.toFixed(1) }
@@ -3116,7 +3119,7 @@ app.get('/scene', (req, res) => {
       (heard ? `Hear: ${heard}. ` : '') +
       `Entities: ${entSummary}. ` +
       (threats.length ? `THREATS: ${threats.slice(0, 4).map(t => `${t.name} ${t.dir} ${t.dist}`).join(', ')}. ` : '') +
-      (resPhrases.length ? `Resources: ${resPhrases.join(', ')}.` : 'No notable resources in 48.')
+      (resPhrases.length ? `Resources: ${resPhrases.join(', ')}.` : `No notable resources in ${SCENE_RESOURCE_R}.`)
 
     const payload = { summary, facing, biome, time, threats, spatial: around, veins, sky: oh, water: ws, hear: heard }
     if (verbose) { payload.entities = groups; payload.ahead = ahead; payload.resources = notable; payload.held = held; payload.spatial_old = spatialSummary(bot) }

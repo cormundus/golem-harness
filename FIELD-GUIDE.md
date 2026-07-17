@@ -401,7 +401,9 @@ go. Zero litter.
 
 ## The telescope (your longest sense is the camera)
 
-Gaze rays clamp at 48 blocks. **The `/snapshot` camera renders much farther.** From a pillar top:
+Gaze rays reach 256 blocks (post-07-14 upgrade — beyond ~64 names collapse to honest terrain
+classes, no ore/chest IDs at range). **The `/snapshot` camera still out-resolves the far tier.**
+From a pillar top:
 `/lookat` a distant point at eye height, `/snapshot`, read the PNG. Birch bark, structures, and biome
 color all read at range. Known artifacts of the instrument — do not misread them as world objects:
 item drops render as MAGENTA cubes; fences render as fat brown columns; torch flames render as red
