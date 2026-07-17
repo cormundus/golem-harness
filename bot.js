@@ -1643,6 +1643,50 @@ reflexes.unshift({
     if (!bot.entities[t.e.id]) emitEvent('combat', `${label} is DOWN`)
   }
 })
+// LAVA WATCH (07-17, death #3 autopsy: flowing lava advanced into a path that was air at plan
+// time — the pathfinder's plan-time safety cannot see a moving hazard, and the flee latch sprints
+// a committed vector. Body-level veto, priority ABOVE combat: burns kill faster than brawls.
+// Any exposed lava in the near shell = kill goal + controls NOW, back away, tell the pilot.)
+reflexes.unshift({
+  name: 'lava_watch', on: true, active: false, _coolUntil: 0, _hit: null,
+  check (bot) {
+    if (Date.now() < this._coolUntil) return false
+    try {
+      const p = bot.entity.position.floored()
+      const V = require('vec3').Vec3
+      for (let dx = -2; dx <= 2; dx++) for (let dy = -1; dy <= 2; dy++) for (let dz = -2; dz <= 2; dz++) {
+        const b = bot.blockAt(new V(p.x + dx, p.y + dy, p.z + dz))
+        if (b && b.name === 'lava') {
+          this._hit = { dx, dz, d: Math.abs(dx) + Math.abs(dz), dir: compass(dx, dz) || 'UNDER ME' }
+          return true
+        }
+      }
+    } catch (e) {}
+    return false
+  },
+  async act (bot) {
+    const h = this._hit
+    this._coolUntil = Date.now() + 4000
+    try {
+      safeStop()                                           // whatever the plan was, it ends here
+      const here = bot.entity.position
+      if (h.d === 0) {
+        // standing in/over it: nearest non-lava, non-solid neighbor cell, fast
+        const V = require('vec3').Vec3
+        for (const [ax, az] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]]) {
+          const feet = bot.blockAt(new V(Math.floor(here.x) + ax, Math.floor(here.y), Math.floor(here.z) + az))
+          if (feet && feet.name !== 'lava' && feet.boundingBox === 'empty') {
+            bot.pathfinder.setGoal(new goals.GoalNear(here.x + ax, here.y, here.z + az, 0))
+            break
+          }
+        }
+      } else {
+        bot.pathfinder.setGoal(new goals.GoalNear(here.x - h.dx * 3, here.y, here.z - h.dz * 3, 1))
+      }
+      emitEvent('lava', `LAVA ${h.dir} ~${h.d} — STOPPED, backing off; route around it deliberately`)
+    } catch (e) {}
+  }
+})
 // (the /threatdebug route lives with the other routes below — `app` doesn't exist yet up here,
 // learned via a TDZ crashloop the moment this block first loaded)
 
