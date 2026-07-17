@@ -146,7 +146,7 @@ The long-form companion — worked examples, techniques, and the field stories b
 | `/passages` | `radius`          | Exits from your air pocket by direction, each with a walk-to sample cell. All `(sensed)`. |
 | `/map`      | `radius verbose`  | Top-down ASCII minimap, **fog-of-war** (only what you've seen/walked renders; `·` unexplored). Row 0 is north. |
 | `/find`     | `name count radius sense xray` | Nearest matching blocks (fuzzy names), exposed+LOS only. `sense=1` adds air-connected hits tagged `inSight`. |
-| `/entities` | `radius all`      | Nearby entities, fairness-gated (sealed-behind-rock = imperceptible; `all=1` debug). |
+| `/entities` | `radius all`      | Nearby entities, fairness-gated (sealed-behind-rock = imperceptible; `all=1` debug). Perception = shared air ≤~34, open sky, or a clear eye-ray — `radius=128` is real sight across caverns/terrain; the server stops tracking mobs past ~128 anyway. |
 | `/listen`   | `window`          | Aggregated recent sounds (ears hear through walls fairly; danger tier self-announces). |
 | `/snapshot` | `wait`            | Best-effort first-person PNG (aim with `/lookat` first). The camera outranges the gaze — but it's a witness with biases; verify with block data. |
 | `/pulse`    | `since`           | Change-gated ambient narrator (pull). |

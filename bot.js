@@ -1779,6 +1779,27 @@ app.get('/find', (req, res) => {
 
 // fairness (07-12): an entity sealed behind rock — not sharing my connected air — is imperceptible,
 // same rule as ore. ?all=1 is the debug bypass (like /find xray).
+// EYE-RAY (07-17, the entity-sense extension the helmsman asked for): the air-flood caps at
+// ~34 for cost, but a big cavern, a chasm, or open terrain gives TRUE line of sight far beyond
+// it — and the server honestly tracks monsters to ~128. A straight unobstructed ray from my eyes
+// is the strictest perception there is: fair by construction, no flood needed. ~0.5-block
+// sampling; glass/leaves count as walls (honest: pixel sight, not entity-ESP).
+function losClear(from, to) {
+  try {
+    const d = to.minus(from); const len = d.norm()
+    if (len > 160) return false               // past honest server tracking — nothing to see
+    const steps = Math.max(1, Math.ceil(len * 2))
+    const step = d.scaled(1 / steps)
+    let p = from
+    for (let i = 1; i < steps; i++) {
+      p = p.plus(step)
+      const b = bot.blockAt(p.floored())
+      if (!b) return false                    // unloaded chunk in the way — can't claim sight
+      if (b.boundingBox === 'block') return false
+    }
+    return true
+  } catch (e) { return false }
+}
 function entityPerceptible(en, fill) {
   try {
     const p = en.position.floored()
@@ -1797,7 +1818,9 @@ function entityPerceptible(en, fill) {
       return true
     }
     const me = bot.entity.position.floored()
-    return skyAbove(me) && skyAbove(p)
+    if (skyAbove(me) && skyAbove(p)) return true
+    // last resort: the eye-ray — sight across caverns/chasms the flood can't afford to fill
+    return losClear(bot.entity.position.offset(0, 1.62, 0), en.position.offset(0, 1.0, 0))
   } catch (e) { return true }
 }
 // ---- player locator (07-14, the helmsman's ask: "so we avoid 'where I am' and in case we ever get
@@ -3048,7 +3071,7 @@ app.get('/scene', (req, res) => {
         if (en.type !== 'mob' && en.type !== 'animal' && en.type !== 'hostile' &&
             en.type !== 'passive' && en.type !== 'player' && en.type !== 'living') continue
         const d = en.position.distanceTo(here)
-        if (d > 32) continue
+        if (d > 48) continue                                   // 32→48 (07-17): the eye-ray tier makes far sight real
         if (!entityPerceptible(en, sceneFill)) continue        // sealed behind rock = imperceptible (07-12)
         const nm = en.name || en.username || en.displayName || en.type || 'entity'
         const dir = compass(en.position.x - here.x, en.position.z - here.z)
