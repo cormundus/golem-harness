@@ -115,6 +115,7 @@ The long-form companion — worked examples, techniques, and the field stories b
 | `/craft`     | `item count`                        | Craft (walks to a table within 16, or places+reclaims one). |
 | `/place`     | `name`                              | Place a block on an open spot beside you. |
 | `/placeitem` | `name x y z face`                   | Place at an exact coordinate; `face=N\|S\|E\|W` sets stair ascend direction. |
+| `/sign`      | `x y z text face item`              | Place a sign AND write it (one editable moment). `text` URL-encoded, `\|` splits lines (≤4, ~15 chars); `face` aims a standing sign; sideways-only reference = wall sign. |
 | `/digat`     | `x y z`                             | Dig one specific block (auto-upgrades pick tier so drops aren't destroyed). |
 | `/equip`     | `name dest`                         | Equip an item (`dest`: hand, off-hand, head, torso, legs, feet). |
 | `/lookat`    | `x y z`                             | Aim the head at a point. |

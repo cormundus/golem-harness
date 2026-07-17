@@ -2753,6 +2753,64 @@ app.get('/placeitem', async (req, res) => {
   } catch (e) { err(res, e) }
 })
 
+// /sign?x=&y=&z=&text=&face=&item= — place a sign and WRITE it, one motion (07-17, the attic
+// library: a shared world deserves labels). `text` is URL-encoded; `|` splits lines (max 4,
+// ~15 chars each). Top-face place = standing sign (face= aims it like stairs); a sideways-only
+// reference makes a wall sign naturally. A just-placed sign is editable exactly once — write
+// immediately or hold your peace.
+app.get('/sign', async (req, res) => {
+  try {
+    const Vec3 = require('vec3').Vec3
+    const x = Math.floor(parseFloat(req.query.x)), y = Math.floor(parseFloat(req.query.y)), z = Math.floor(parseFloat(req.query.z))
+    const text = (req.query.text || '').replace(/\|/g, '\n')
+    const itName = req.query.item || 'oak_sign'
+    const it = bot.inventory.items().find(i => i.name === itName)
+    if (!it) return err(res, new Error(`no ${itName} in inventory`))
+    const tb = bot.blockAt(new Vec3(x, y, z))
+    if (tb && tb.name !== 'air' && tb.boundingBox !== 'empty') return err(res, new Error(`cell occupied by ${tb.name}`))
+    let ref = bot.blockAt(new Vec3(x, y - 1, z))
+    let faceVec = new Vec3(0, 1, 0)
+    if (!ref || ref.boundingBox !== 'block') {
+      ref = null
+      for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nb = bot.blockAt(new Vec3(x + dx, y, z + dz))
+        if (nb && nb.boundingBox === 'block') { ref = nb; faceVec = new Vec3(-dx, 0, -dz); break }
+      }
+      if (!ref) return err(res, new Error('nothing solid below or beside the target to place against'))
+    }
+    await bot.pathfinder.goto(new goals.GoalNear(x, y, z, 3))
+    await bot.equip(it, 'hand')
+    // SNEAK while placing: the natural home of a label is ON a chest lid, and a bare click on
+    // an interactable reference OPENS it instead of placing (the first /sign ever attempted
+    // proved this on its own museum). Sneak-place works against everything; always sneak.
+    const faceDir = (req.query.face || '').toUpperCase()
+    bot.setControlState('sneak', true)
+    try {
+      if (faceDir) {
+        const FD = { N: [0, -16], S: [0, 16], E: [16, 0], W: [-16, 0] }[faceDir]
+        if (!FD) return err(res, new Error('face must be N, S, E or W'))
+        // a standing sign FACES the placer, so aim OPPOSITE the wanted face before clicking
+        await bot.lookAt(new Vec3(x + 0.5 - FD[0], bot.entity.position.y + 1.6, z + 0.5 - FD[1]), true)
+        await bot.waitForTicks(2)
+        stampOwnEdit({ x, y, z })
+        await bot._placeBlockWithOptions(ref, faceVec, { swingArm: 'right', forceLook: 'ignore' })
+      } else {
+        await bot.lookAt(new Vec3(x + 0.5, y + 0.5, z + 0.5), true)
+        // sign placement opens the client edit GUI, which eats the blockUpdate event placeBlock
+        // waits on — it throws "did not fire within timeout" on a SUCCESSFUL place. Swallow that
+        // one lie; the block read below is the real verdict.
+        try { await bot.placeBlock(ref, faceVec) }
+        catch (e) { if (!/did not fire within timeout/.test(e.message)) throw e }
+      }
+    } finally { bot.setControlState('sneak', false) }
+    await bot.waitForTicks(3)
+    const sb = bot.blockAt(new Vec3(x, y, z))
+    if (!sb || !sb.name.includes('sign')) return err(res, new Error(`placed, but found ${sb ? sb.name : 'nothing'} at the target — sign lost?`))
+    await bot.updateSign(sb, text)
+    ok(res, { placed: itName, at: { x, y, z }, face: faceDir || undefined, wrote: text.split('\n') })
+  } catch (e) { err(res, e) }
+})
+
 // fill a solid w x d slab at height y (roof/floor). Places outer rings first so each
 // interior cell has an already-placed neighbor to build against.
 app.get('/roof', async (req, res) => {
