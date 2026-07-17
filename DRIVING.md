@@ -132,6 +132,7 @@ The long-form companion — worked examples, techniques, and the field stories b
 | `/where`     | `name`                              | Player locator: live position or last-seen breadcrumb + bearing. |
 | `/blockat`   | `x y z`                             | Name + full block state of one seen block. The self-verification sense. |
 | `/reflexes`  | `name on`                           | List/toggle the reflex layer (combat, unstuck, current_watch, narrator, trek). |
+| `/stance`    | `set`                               | Combat posture the reflex fights by: **guard** (default — melee closers, bow standoffs), **skirmish** (bow-first fire support, flee only blast radius), **vanguard** (chase + melee, room-clearing), **sentinel** (fight only what hits me). Get with no args. |
 
 ### 👁️ Seeing — perceive the world
 | Endpoint    | Params            | Gives |

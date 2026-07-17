@@ -1409,6 +1409,37 @@ const PROVOKABLE = new Set(['enderman', 'zombified_piglin', 'piglin', 'bee', 'wo
 // them is deliberate work: pilot's bow, the helmsman's blade, a chokepoint. Survival is the
 // reflex's job, not victory.
 const HEAVY_MELEE = new Set(['vindicator', 'ravager', 'piglin_brute', 'wither_skeleton'])
+// STANCES (07-17, the helmsman's ask after the deep-cave crawl: "acquire target at distance,
+// draw bow and fire" didn't exist — the reflex stared at standoff skeletons sword-in-hand — and
+// the pilot needs postures to set strategy with, not one hardcoded doctrine). A stance is DATA
+// the combat reflex reads: creeper/heavy berth, the bow band, whether to chase, what to score.
+const STANCES = {
+  guard:    { fleeDist: 16, bowBand: [7, 24],  chase: false, engage: 'closers',   note: 'default: hold ground, melee closers, bow standoffs, wide creeper berth' },
+  skirmish: { fleeDist: 8,  bowBand: [4, 24],  chase: false, engage: 'closers',   note: 'fire support: bow-first from the perch, flee only inside blast radius' },
+  vanguard: { fleeDist: 12, bowBand: [10, 24], chase: true,  engage: 'closers',   note: 'clear the room: run melee targets down, bow only the far ones' },
+  sentinel: { fleeDist: 16, bowBand: [7, 24],  chase: false, engage: 'confirmed', note: 'work detail: ignore posturing, fight only what actually hits me' }
+}
+let stance = 'guard'
+// One full bow cycle at a live target: equip, chest+holdover aim, full 1150ms draw, re-aim, loose.
+// Factored from /shoot so the reflex and the verb fire the same arrow. Returns false if no bow/arrows.
+async function drawAndLoose (target) {
+  const bow = bot.inventory.items().find(i => i.name === 'bow')
+  if (!bow || !bot.inventory.items().some(i => i.name === 'arrow')) return false
+  const alreadyHeld = bot.heldItem && bot.heldItem.name === 'bow'
+  await bot.equip(bow, 'hand')
+  if (!alreadyHeld) await bot.waitForTicks(4)
+  const dist = target.position.distanceTo(bot.entity.position)
+  const aim = () => target.position.offset(0, 1.0 + dist * 0.018, 0)   // chest-height + hold-over
+  await bot.lookAt(aim(), true)
+  await bot.waitForTicks(2)                       // the tick race, as ever
+  bot.activateItem()                              // draw...
+  await new Promise(r => setTimeout(r, 1150))     // ...full charge
+  if (!bot.entities[target.id]) { try { bot.deactivateItem() } catch (e) {} ; return true }
+  await bot.lookAt(aim(), true)                   // re-aim in case the target shuffled
+  await bot.waitForTicks(2)
+  bot.deactivateItem()                            // loose!
+  return true
+}
 const AGGRO_CONFIRMED = new Map()          // entityId -> {name, t} — fed by damage attribution
 let threatDebugUntil = 0                   // /threatdebug window: score players, narrate only
 let lastHit = { dmg: 0, t: 0 }             // last hit taken (size + when) — scales the disengage tripwire while FRESH
@@ -1514,7 +1545,10 @@ reflexes.unshift({
           h.d = dist; h.t = now
         }
         this._hist.set(e.id, h)
-        const aggro = !!confirmed || h.closes >= 3 || (cls === 'creeper' && dist < 8)
+        // sentinel stance: posturing doesn't count — only confirmed attackers score (creeper
+        // proximity still does: fleeing a lit fuse is survival, not engagement)
+        const closerAggro = STANCES[stance].engage === 'confirmed' ? false : h.closes >= 3
+        const aggro = !!confirmed || closerAggro || (cls === 'creeper' && dist < 8)
         if (aggro && (!best || dist < best.dist)) best = { e, cls, dist, confirmed: !!confirmed }
       }
       this._threat = best
@@ -1532,11 +1566,20 @@ reflexes.unshift({
     const narKey = t.e.id
     if (now - (this._lastNarrate.get(narKey) || 0) > 8000) {
       this._lastNarrate.set(narKey, now)
-      emitEvent('threat', `${label} ${dir} ~${Math.round(t.dist)} ${t.confirmed ? 'CONFIRMED (it hit me)' : 'closing fast'} — ${t.cls === 'creeper' ? 'FLEEING' : t.cls === 'heavy' ? 'KITING (trades are fatal)' : t.cls === 'player' ? 'debug: scoring only' : 'engaging'}`)
+      emitEvent('threat', `${label} ${dir} ~${Math.round(t.dist)} ${t.confirmed ? 'CONFIRMED (it hit me)' : 'closing fast'} — ${t.cls === 'creeper' ? 'creeper doctrine' : t.cls === 'heavy' ? 'heavy doctrine (no trades)' : t.cls === 'player' ? 'debug: scoring only' : 'engaging'} [${stance}]`)
     }
     if (t.cls === 'player') return                          // NEVER weapons on players — narrate only
-    if (t.cls === 'creeper' || t.cls === 'heavy') {         // flee, always: away-vector, never trade
-      this.fleeFrom(bot, t.e.position, null)               // threat narration above already says so
+    const s = STANCES[stance]
+    if (t.cls === 'creeper' || t.cls === 'heavy') {
+      // Never trade with these — but "never melee" stopped meaning "only run" when stances landed:
+      // beyond the stance's berth and inside the bow band, the answer is an arrow, not distance.
+      if (t.dist <= s.fleeDist) { this.fleeFrom(bot, t.e.position, null); return }
+      const [lo, hi] = s.bowBand
+      const bandLo = t.cls === 'heavy' ? Math.max(lo, 10) : lo   // heavies close FAST — bigger floor
+      if (t.dist >= bandLo && t.dist <= hi) {
+        try { if (await drawAndLoose(t.e)) return } catch (e) {}
+      }
+      this.fleeFrom(bot, t.e.position, null)
       return
     }
     // melee hostile: SHIELD POSTURE while it closes (the shield is a posture, not a parry —
@@ -1560,12 +1603,26 @@ reflexes.unshift({
           return
         }
         const d = t.e.position.distanceTo(bot.entity.position)
-        if (d > 3.2) {                                        // hold ground, face it, shield up
-          guardUp()
+        if (d > 3.2) {
+          // Standoff band (the helmsman's 07-16 complaint: the reflex used to stand here sword-in-
+          // hand, staring at skeletons that plink from 10). Stance decides: bow it, chase it, or
+          // hold shield-up as before.
+          const [lo, hi] = s.bowBand
+          if (d >= lo && d <= hi) {
+            guardDown()                                       // both hands on the bow
+            try { if (await drawAndLoose(t.e)) { await new Promise(r => setTimeout(r, 200)); continue } } catch (e) {}
+          }
+          if (s.chase) {                                      // vanguard: run it down
+            try { bot.pathfinder.setGoal(new goals.GoalNear(t.e.position.x, t.e.position.y, t.e.position.z, 2)) } catch (e) {}
+            await new Promise(r => setTimeout(r, 500))
+            continue
+          }
+          guardUp()                                           // hold ground, face it, shield up
           await bot.lookAt(t.e.position.offset(0, 1.2, 0), true)
           await new Promise(r => setTimeout(r, 250))
           continue
         }
+        if (s.chase) { try { bot.pathfinder.setGoal(null) } catch (e) {} }  // in reach — legs off, sword out
         try {
           if (sword && (!bot.heldItem || bot.heldItem.name !== sword.name)) { await bot.equip(sword, 'hand'); await bot.waitForTicks(13) }
           guardDown()                                         // the swing window — shield drops...
@@ -1873,17 +1930,7 @@ app.get('/shoot', async (req, res) => {
       return err(res, new Error('refusing: never shoot players'))
     }
     const dist = target.position.distanceTo(here)
-    const alreadyHeld = bot.heldItem && bot.heldItem.name === 'bow'
-    await bot.equip(bow, 'hand')
-    if (!alreadyHeld) await bot.waitForTicks(4)
-    const aim = target.position.offset(0, 1.0 + dist * 0.018, 0)   // chest-height + hold-over
-    await bot.lookAt(aim, true)
-    await bot.waitForTicks(2)                       // the tick race, as ever
-    bot.activateItem()                              // draw...
-    await new Promise(r => setTimeout(r, 1150))     // ...full charge
-    await bot.lookAt(aim, true)                     // re-aim in case the target shuffled
-    await bot.waitForTicks(2)
-    bot.deactivateItem()                            // loose!
+    await drawAndLoose(target)                      // the same arrow the combat reflex fires
     let dead = false
     for (let w = 0; w < 20 && !dead; w++) {
       await new Promise(r => setTimeout(r, 100))
@@ -2725,6 +2772,19 @@ app.get('/reflexes', (req, res) => {
       return ok(res, { name: r.name, on: r.on, active: r.active })
     }
     ok(res, { reflexes: reflexes.map(r => ({ name: r.name, on: r.on, active: r.active })) })
+  } catch (e) { err(res, e) }
+})
+// GET /stance[?set=name] — combat posture, read by the combat reflex each engagement. The pilot's
+// strategy dial: what gets scored, when the bow comes out, how much berth explosives get.
+app.get('/stance', (req, res) => {
+  try {
+    const want = req.query.set
+    if (want) {
+      if (!STANCES[want]) return err(res, new Error(`no stance '${want}' — have: ${Object.keys(STANCES).join(', ')}`))
+      stance = want
+      emitEvent('stance', `combat posture now ${want}: ${STANCES[want].note}`)
+    }
+    ok(res, { stance, ...STANCES[stance], all: Object.fromEntries(Object.entries(STANCES).map(([k, v]) => [k, v.note])) })
   } catch (e) { err(res, e) }
 })
 // GET /pulse?since=N — the ambient awareness stream (pull-based, at my pace). Returns the lean
