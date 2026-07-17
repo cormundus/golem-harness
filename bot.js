@@ -1425,6 +1425,10 @@ let stance = 'guard'
 async function drawAndLoose (target) {
   const bow = bot.inventory.items().find(i => i.name === 'bow')
   if (!bow || !bot.inventory.items().some(i => i.name === 'arrow')) return false
+  // NO LOS, NO LOOSE (07-17, ten arrows into a wall: a skeleton in a sealed neighbor pocket was
+  // PERCEPTIBLE by connected air — fair for awareness, like hearing — but the reflex treated
+  // "perceptible" as "shootable". A firing solution needs an actual clear eye-ray.)
+  if (!losClear(bot.entity.position.offset(0, 1.62, 0), target.position.offset(0, 1.0, 0))) return false
   const alreadyHeld = bot.heldItem && bot.heldItem.name === 'bow'
   await bot.equip(bow, 'hand')
   if (!alreadyHeld) await bot.waitForTicks(4)
