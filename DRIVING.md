@@ -102,7 +102,7 @@ The long-form companion — worked examples, techniques, and the field stories b
 | `/mine`      | `name count radius`                 | Find + break + collect the nearest matching blocks. |
 | `/collect`   | `radius`                            | Walk over loose item drops to pick them up. |
 | `/gather`    | `resource amount radius`            | **Job.** Repeat find+mine until amount collected. Never digs straight down. |
-| `/dig_stair` | `dir up steps torch`                | **Job.** Carve an ascending/descending staircase through solid rock. |
+| `/dig_stair` | `dir up steps torch`                | **Job.** Carve a staircase through solid rock. `up=1` ascends (default); `up=0` or `-1` descends; `torch` is spacing-in-steps (default 4), not a flag. |
 | `/dig_tunnel`| `dir length torch`                  | **Job.** Carve a 1×2 corridor through solid rock; stops honestly at cavities/lava/water. |
 | `/pillar`    | `height`                            | Jump-and-place vertical access, UP only (descend by digging under your own feet). |
 | `/bridging`  | `on`                                | Arm/disarm deliberate scaffold placement for gap crossings; `/tidy` reclaims. |

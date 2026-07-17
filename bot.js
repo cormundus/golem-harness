@@ -261,7 +261,12 @@ bot.once('spawn', () => {
 
 bot.on('kicked', (r) => console.log('[bot] kicked:', r))
 bot.on('error', (e) => console.log('[bot] error:', e.message))
-bot.on('end', (r) => console.log('[bot] disconnected:', r))
+// The connection dying MUST kill the process: the watchdog only relaunches on process death,
+// and a live control API over a dead socket serves stale world state with ok:true (ghost mode).
+bot.on('end', (r) => {
+  console.log('[bot] disconnected:', r, '— exiting so the watchdog can relaunch')
+  setTimeout(() => process.exit(1), 500)
+})
 
 // ---- chat capture (so the driver can hear the world, not just speak to it) ----
 let chatSeq = 0
@@ -2107,8 +2112,15 @@ app.get('/craft', async (req, res) => {
 
     // Does this recipe need a 3x3 table? (craftable WITH an assumed table but not without one)
     const needsTable = !bot.recipesFor(item.id, null, 1, null).length && !!bot.recipesFor(item.id, null, 1, true).length
+    // Tableless 2x2 crafting desyncs on 1.21.x: the client simulates the craft (materials down,
+    // output up) but the server never performs it, and the next sync deletes the output. Route
+    // every craft through a real table when one is reachable or in the bag; 2x2 only as last resort.
+    const canUseTable = !!bot.recipesFor(item.id, null, 1, true).length
+    const tableAvailable = !!bot.findBlock({ matching: resolveBlockIds('crafting_table'), maxDistance: 16 }) ||
+                           !!bot.inventory.items().find(i => i.name === 'crafting_table')
+    const useTable = needsTable || (canUseTable && tableAvailable)
     let placedTable = null
-    if (needsTable) {
+    if (useTable) {
       const near = bot.findBlock({ matching: resolveBlockIds('crafting_table'), maxDistance: 16 })
       if (near) {
         // walk within reach of an existing table (fixes today's "table 4 blocks away" failure)
@@ -2135,9 +2147,9 @@ app.get('/craft', async (req, res) => {
     // Craft ONE recipe at a time, re-fetching each pass so depletion is handled and `made` is true.
     let made = 0, lastErr = null
     for (let i = 0; i < count; i++) {
-      const t = needsTable ? bot.findBlock({ matching: resolveBlockIds('crafting_table'), maxDistance: 4 }) : null
+      const t = useTable ? bot.findBlock({ matching: resolveBlockIds('crafting_table'), maxDistance: 4 }) : null
       const recipes = bot.recipesFor(item.id, null, 1, t)
-      if (!recipes.length) { lastErr = `out of materials/recipe after ${made}${needsTable ? ` (table nearby: ${!!t})` : ''}`; break }
+      if (!recipes.length) { lastErr = `out of materials/recipe after ${made}${useTable ? ` (table nearby: ${!!t})` : ''}`; break }
       try { await bot.craft(recipes[0], 1, t || undefined); made++ }
       catch (e) { lastErr = e.message; break }
     }
@@ -2149,7 +2161,7 @@ app.get('/craft', async (req, res) => {
 
     const nowHave = bot.inventory.items().filter(it => it.name === item.name).reduce((s, it) => s + it.count, 0)
     if (made === 0) return err(res, new Error(lastErr || 'craft failed'))
-    ok(res, { crafted: item.name, requested: count, made, usedTable: needsTable, placedTable: !!placedTable, reclaimedTable, nowHave, note: lastErr || undefined })
+    ok(res, { crafted: item.name, requested: count, made, usedTable: useTable, placedTable: !!placedTable, reclaimedTable, nowHave, note: lastErr || undefined })
   } catch (e) { err(res, e) }
 })
 
@@ -3776,7 +3788,7 @@ app.get('/dig_stair', async (req, res) => {
     const dirParam = (req.query.dir || '').toLowerCase()
     if (DIRS[dirParam]) { [dx, dz] = DIRS[dirParam] }
     else { const yaw = bot.entity.yaw, sx = -Math.sin(yaw), cz = Math.cos(yaw); if (Math.abs(sx) >= Math.abs(cz)) { dx = Math.sign(sx) || 1; dz = 0 } else { dx = 0; dz = Math.sign(cz) || 1 } }
-    const up = parseInt(req.query.up || '1') >= 0 ? 1 : -1
+    const up = parseInt(req.query.up || '1') >= 1 ? 1 : -1  // up=0 means DOWN (a pilot burned a staircase on `0 >= 0`)
     const steps = Math.min(Math.max(1, parseInt(req.query.steps || '24')), 96)
     const torchEvery = req.query.torch != null ? parseInt(req.query.torch) : 4
     const dirName = dirParam || (dx ? (dx > 0 ? 'e' : 'w') : (dz > 0 ? 's' : 'n'))
