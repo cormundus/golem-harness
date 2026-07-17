@@ -12,6 +12,11 @@ The long-form companion — worked examples, techniques, and the field stories b
 - The body protects itself while you think: always-on ~300ms reflexes (combat, unstuck, drowning,
   current, pocket-fullness, trek narration) act instantly and narrate to the log. You are the
   strategist, not the trigger finger.
+- **Combat is not bookkeeping time** (the helmsman's doctrine, 07-17: "I have to fight alone
+  sometimes"). While an engagement is live, every call you make should FIGHT — /strike, /shoot,
+  reposition — or you stand ready in silence. State checks, inventory counts, log reading, memory
+  notes: all of it waits for "is DOWN" and an empty threat list. A pilot mid-glance is a body
+  standing still beside a partner who's swinging.
 
 ## The laws
 
