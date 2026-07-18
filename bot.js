@@ -207,6 +207,17 @@ bot.once('spawn', () => {
         if (Date.now() - lastDrownEvt < 3000) return               // throttle the spam
         lastDrownEvt = Date.now()
         emitEvent('drowning', `DROWNING — oxygen ${o2}/20, get to air NOW`, { oxygen: o2, health: bot.health })
+        // SURVIVAL REFLEX (07-17, drowned to 2HP mid-dig): an active dig pins the body underwater
+        // and nothing else lets go. Abort the dig and swim — air first, apologies after.
+        if (o2 <= 8) {
+          try { bot.stopDigging() } catch (e) {}
+          try { bot.pathfinder.setGoal(null) } catch (e) {}
+          try {
+            bot.setControlState('jump', true)
+            setTimeout(() => { try { bot.setControlState('jump', false) } catch (e) {} }, 4000)
+          } catch (e) {}
+          emitEvent('drowning', 'drown reflex: dig aborted, swimming up', {})
+        }
       } catch (e) {}
     })
 
@@ -1606,6 +1617,21 @@ reflexes.unshift({
           this.fleeFrom(bot, t.e.position, `HP ${Math.round(bot.health * 10) / 10} — disengaging from ${label}, sprinting`)
           return
         }
+        // OUTNUMBERED (07-18, death #4 autopsy + the helmsman's diagnosis: the close-in never
+        // counted the room). 3+ perceptible hostiles inside 16 is not a duel — withdraw, don't
+        // engage-nearest while the rest converge.
+        const fill = this.fairFill(bot)
+        const pack = Object.values(bot.entities).filter(e2 => {
+          if (!e2 || !e2.position) return false
+          const c2 = mobClass(e2)
+          if (c2 !== 'hostile' && c2 !== 'creeper' && c2 !== 'heavy') return false
+          if (e2.position.distanceTo(bot.entity.position) >= 16) return false
+          return AGGRO_CONFIRMED.has(e2.id) || entityPerceptible(e2, fill)
+        }).length
+        if (pack >= 3) {
+          this.fleeFrom(bot, t.e.position, `OUTNUMBERED ${pack} — fighting withdrawal, not a duel`)
+          return
+        }
         const d = t.e.position.distanceTo(bot.entity.position)
         if (d > 3.2) {
           // Standoff band (the helmsman's 07-16 complaint: the reflex used to stand here sword-in-
@@ -1666,6 +1692,17 @@ reflexes.unshift({
   },
   async act (bot) {
     const h = this._hit
+    // Parked next to STATIC lava (a dam, a pit wall): same cell, hazard no nearer than last
+    // fire = re-firing every 4s only kills pilot goals and floods the log (07-17 churn-pit
+    // spam loop). Warn happened already — stand down 30s and leave the call to the pilot.
+    // Flowing lava still breaks through: it gets CLOSER, so h.d drops and we act.
+    const posNow = bot.entity.position.floored()
+    if (this._lastPos && posNow.equals(this._lastPos) && this._lastD != null && h.d >= this._lastD) {
+      this._coolUntil = Date.now() + 30000
+      this._lastD = h.d
+      return
+    }
+    this._lastPos = posNow; this._lastD = h.d
     this._coolUntil = Date.now() + 4000
     try {
       safeStop()                                           // whatever the plan was, it ends here
@@ -1690,6 +1727,37 @@ reflexes.unshift({
 // (the /threatdebug route lives with the other routes below — `app` doesn't exist yet up here,
 // learned via a TDZ crashloop the moment this block first loaded)
 
+// ---- ORE CALLOUT: passive prospector sense (07-17, "your ore senses need tuning" — Adam).
+// A player's eyes are always on; the pilot's /find only fires when asked. Every 4s, sweep
+// air-EXPOSED ore within 12 (findExposed — the fair 360 sense, no wall-vision) and announce
+// anything new. Announced set is pruned by distance+age so it can't OOM (the SEEN lesson).
+const ORE_ANNOUNCED = new Map()   // "x,y,z" -> ts
+let ORE_IDS = null
+setInterval(() => {
+  try {
+    if (!ready || !bot.entity || !mcData) return
+    if (!ORE_IDS) ORE_IDS = Object.values(mcData.blocksByName)
+      .filter(b => /_ore$/.test(b.name) || b.name === 'ancient_debris').map(b => b.id)
+    const here = bot.entity.position
+    for (const [k, ts] of ORE_ANNOUNCED) {                     // prune: >10min old or >48 away
+      const [x, y, z] = k.split(',').map(Number)
+      if (Date.now() - ts > 600000 || here.distanceTo(new Vec3(x, y, z)) > 48) ORE_ANNOUNCED.delete(k)
+    }
+    const fresh = {}
+    for (const v of findExposed(ORE_IDS, 12, 12)) {
+      const k = `${v.pos.x},${v.pos.y},${v.pos.z}`
+      if (ORE_ANNOUNCED.has(k)) continue
+      ORE_ANNOUNCED.set(k, Date.now())
+      const b = bot.blockAt(v.pos); if (!b) continue
+      const dir = compass(v.pos.x - Math.floor(here.x), v.pos.z - Math.floor(here.z)) || 'HERE'
+      const g = fresh[b.name] = fresh[b.name] || { n: 0, dir, d: Math.round(v.dist), y: v.pos.y }
+      g.n++
+    }
+    for (const [name, g] of Object.entries(fresh))
+      emitEvent('ore', `${name}${g.n > 1 ? ' x' + g.n : ''} in view ${g.dir} ~${g.d} (y${g.y})`)
+  } catch (e) {}
+}, 4000)
+
 // ---- SEEN persistence: the fair fog-of-war memory survives restarts. Saved on a timer (and on
 // clean disconnect); loaded at spawn.
 const SEEN_FILE = './seen.json'
@@ -1712,6 +1780,7 @@ const PICK_TIER = { wooden_pickaxe: 0, golden_pickaxe: 0, stone_pickaxe: 1, iron
 function neededPickTier(blockName) {
   if (!blockName) return 0
   const n = blockName.replace('deepslate_', '')
+  if (/obsidian|ancient_debris|respawn_anchor/.test(n)) return 3   // diamond+ or the drop is DESTROYED
   if (/(gold|diamond|emerald|redstone)_ore/.test(n)) return 2
   if (/(iron|lapis|copper)_ore/.test(n)) return 1
   return 0
@@ -2336,7 +2405,7 @@ app.get('/equip', async (req, res) => {
 // named, then consumes it. Watch food level in /scene and call this yourself. Restores held item after.
 app.get('/eat', async (req, res) => {
   try {
-    const want = req.query.food
+    const want = req.query.food || req.query.name   // accept both (the salmon/porkchop mystery: name= was ignored)
     const items = bot.inventory.items()
     const foods = (mcData && mcData.foods) || {}
     let food = null
@@ -2349,7 +2418,18 @@ app.get('/eat', async (req, res) => {
     const prevHeld = bot.heldItem
     const before = bot.food
     await bot.equip(food, 'hand')
-    await bot.consume()
+    try {
+      await bot.consume()
+    } catch (e) {
+      // Golden apples + chorus fruit are edible at FULL hunger in vanilla; mineflayer's
+      // consume() guard refuses ("Food is full"). Hold right-click instead. (07-18: that
+      // refusal blocked the emergency heal seconds before death #4.)
+      if (/full/i.test(e.message) && /golden_apple|chorus_fruit/.test(food.name)) {
+        bot.activateItem()
+        await new Promise(r => setTimeout(r, 2100))
+        try { bot.deactivateItem() } catch (e2) {}
+      } else throw e
+    }
     try { if (prevHeld && prevHeld.type !== food.type) await bot.equip(prevHeld, 'hand') } catch (e) {}
     ok(res, { ate: food.name, foodBefore: before, foodNow: bot.food })
   } catch (e) { err(res, e) }
