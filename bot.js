@@ -2716,7 +2716,16 @@ app.get('/digat', async (req, res) => {
     // (the old unconditional goto failed on ore embedded in rock with no walkable cell within 3)
     const eyeDist = bot.entity.position.offset(0, 1.62, 0).distanceTo(p.offset(0.5, 0.5, 0.5))
     if (eyeDist > 4.2) await bot.pathfinder.goto(new goals.GoalNear(p.x, p.y, p.z, 3))
-    await equipPickFor(b.name)             // auto-upgrade the pick so a drop is never destroyed
+    // TOOL GUARD (07-18, the bow-dug diamond): equipPickFor's equip can fail SILENTLY — the
+    // combat reflex was holding the bow, the swap lost the race, and the dig went ahead anyway.
+    // For ore that needs a tier, verify a sufficient pick is actually IN HAND or refuse the dig;
+    // a refused dig is recoverable, a destroyed drop is not.
+    await equipPickFor(b.name)
+    const needTier = neededPickTier(b.name)
+    const heldTier = bot.heldItem ? PICK_TIER[bot.heldItem.name] : undefined
+    if (needTier > 0 && (heldTier === undefined || heldTier < needTier)) {
+      return err(res, new Error(`refusing to dig ${b.name} holding ${bot.heldItem ? bot.heldItem.name : 'nothing'} — drop would be destroyed (need pick tier ${needTier})`))
+    }
     await bot.dig(b)
     ok(res, { dug: b.name, at: round(p), with: bot.heldItem ? bot.heldItem.name : null })
   } catch (e) { err(res, e) }
