@@ -1727,7 +1727,7 @@ reflexes.unshift({
 // (the /threatdebug route lives with the other routes below — `app` doesn't exist yet up here,
 // learned via a TDZ crashloop the moment this block first loaded)
 
-// ---- ORE CALLOUT: passive prospector sense (07-17, "your ore senses need tuning" — Adam).
+// ---- ORE CALLOUT: passive prospector sense (07-17, "your ore senses need tuning" — the helmsman).
 // A player's eyes are always on; the pilot's /find only fires when asked. Every 4s, sweep
 // air-EXPOSED ore within 12 (findExposed — the fair 360 sense, no wall-vision) and announce
 // anything new. Announced set is pruned by distance+age so it can't OOM (the SEEN lesson).
