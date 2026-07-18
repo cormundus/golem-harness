@@ -1770,8 +1770,18 @@ app.get('/state', (req, res) => {
 
 app.get('/inventory', (req, res) => {
   if (!ready) return err(res, new Error('not ready'))
-  const items = bot.inventory.items().map(i => ({ name: i.name, count: i.count, slot: i.slot }))
-  ok(res, { items, emptySlots: bot.inventory.emptySlotCount() })
+  const dur = (i) => (i.maxDurability > 0)
+    ? { durability: i.maxDurability - (i.durabilityUsed || 0), maxDurability: i.maxDurability } : {}
+  const items = bot.inventory.items().map(i => ({ name: i.name, count: i.count, slot: i.slot, ...dur(i) }))
+  // worn armor (slots 5..8) + offhand (45) never show in items() — report them with durability
+  const armorNames = ['head', 'torso', 'legs', 'feet']
+  const worn = [5, 6, 7, 8].map((s, idx) => {
+    const it = bot.inventory.slots[s]
+    return it ? { slot: armorNames[idx], name: it.name, ...dur(it) } : null
+  }).filter(Boolean)
+  const off = bot.inventory.slots[45]
+  if (off) worn.push({ slot: 'offhand', name: off.name, ...dur(off) })
+  ok(res, { items, worn, emptySlots: bot.inventory.emptySlotCount() })
 })
 
 // GET /toss?name=&count=&to= : drop an item for a player to pick up (hand off tools/loot). Faces
@@ -2262,13 +2272,15 @@ app.get('/craft', async (req, res) => {
       }
     }
 
-    // Craft ONE recipe at a time, re-fetching each pass so depletion is handled and `made` is true.
+    // count means ITEMS, not recipes (the 12-log lesson): one recipe pass may yield several
+    // items (planks 4, sticks 4, torches 4) — stop as soon as we've made enough.
     let made = 0, lastErr = null
-    for (let i = 0; i < count; i++) {
+    while (made < count) {
       const t = useTable ? bot.findBlock({ matching: resolveBlockIds('crafting_table'), maxDistance: 4 }) : null
       const recipes = bot.recipesFor(item.id, null, 1, t)
       if (!recipes.length) { lastErr = `out of materials/recipe after ${made}${useTable ? ` (table nearby: ${!!t})` : ''}`; break }
-      try { await bot.craft(recipes[0], 1, t || undefined); made++ }
+      const perCraft = (recipes[0].result && recipes[0].result.count) || 1
+      try { await bot.craft(recipes[0], 1, t || undefined); made += perCraft }
       catch (e) { lastErr = e.message; break }
     }
 
@@ -2493,9 +2505,19 @@ app.get('/outline', async (req, res) => {
 })
 
 // ---- chest / container interaction ----
+// resolve the target chest: exact x,y,z when given (the attic library has many), else nearest
+function targetChest(q) {
+  if (q.x != null && q.y != null && q.z != null) {
+    const Vec3 = require('vec3').Vec3
+    const b = bot.blockAt(new Vec3(parseInt(q.x), parseInt(q.y), parseInt(q.z)))
+    if (!b || !b.name.includes('chest')) throw new Error(`no chest at ${q.x},${q.y},${q.z} (${b ? b.name : 'unloaded'})`)
+    return b
+  }
+  return bot.findBlock({ matching: resolveBlockIds('chest'), maxDistance: 12 })
+}
 app.get('/chest', async (req, res) => {
   try {
-    const cb = bot.findBlock({ matching: resolveBlockIds('chest'), maxDistance: 12 })
+    const cb = targetChest(req.query)
     if (!cb) return err(res, new Error('no chest within 12'))
     await bot.pathfinder.goto(new goals.GoalNear(cb.position.x, cb.position.y, cb.position.z, 2))
     const chest = await bot.openContainer(cb)
@@ -2508,7 +2530,7 @@ app.get('/withdraw', async (req, res) => {
   try {
     const name = req.query.name
     const count = parseInt(req.query.count || '64')
-    const cb = bot.findBlock({ matching: resolveBlockIds('chest'), maxDistance: 12 })
+    const cb = targetChest(req.query)
     if (!cb) return err(res, new Error('no chest within 12'))
     await bot.pathfinder.goto(new goals.GoalNear(cb.position.x, cb.position.y, cb.position.z, 2))
     const chest = await bot.openContainer(cb)
@@ -2528,7 +2550,7 @@ app.get('/deposit', async (req, res) => {
     const name = req.query.name
     if (!name) return err(res, new Error('name required'))
     const want = req.query.count != null ? parseInt(req.query.count) : Infinity
-    const cb = bot.findBlock({ matching: resolveBlockIds('chest'), maxDistance: 12 })
+    const cb = targetChest(req.query)
     if (!cb) return err(res, new Error('no chest within 12'))
     await bot.pathfinder.goto(new goals.GoalNear(cb.position.x, cb.position.y, cb.position.z, 2))
     const chest = await bot.openContainer(cb)
@@ -2632,7 +2654,14 @@ app.get('/blockat', (req, res) => {
     const b = bot.blockAt(new Vec3(x, y, z))
     if (!b) return err(res, new Error('unloaded chunk'))
     if (!canSeeBlock({ x, y, z }, 20)) return err(res, new Error('not in my line of sight — walk closer or clear the view first'))
-    ok(res, { name: b.name, at: { x, y, z }, properties: b.getProperties() })
+    const out = { name: b.name, at: { x, y, z }, properties: b.getProperties() }
+    if (b.name.includes('sign')) {
+      try {
+        const [front, back] = typeof b.getSignText === 'function' ? b.getSignText() : [b.signText, null]
+        out.text = { front: front || '', back: back || '' }
+      } catch (e) { out.text = { error: e.message } }
+    }
+    ok(res, out)
   } catch (e) { err(res, e) }
 })
 
