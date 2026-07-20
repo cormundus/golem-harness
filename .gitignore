@@ -29,3 +29,5 @@ chronicles/
 MIGRATION.md
 npm-install.log
 __pycache__/
+recordings/
+tools/ffmpeg/

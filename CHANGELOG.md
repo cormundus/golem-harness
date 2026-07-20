@@ -5,6 +5,26 @@ bit us in the world first. Each fix records the wound that taught it — the rea
 the point, not just the diff. Dates are play-sessions, not releases. Full commit messages
 carry more detail (`git log`); deeper war stories live in FIELD-GUIDE.md.
 
+## 2026-07-20 (night) — the film rig (raid-recording prep)
+
+### Added
+- **`/pov`** — claude-o-vision for human eyes: the first-person viewer in a fullscreen iframe
+  with a HUD overlay (hearts, hunger, XP level, held item, position + compass facing) and a
+  fading caption feed of narrator events + chat. The captions are the point: a human watching
+  the footage sees what the body tells the pilot — the inner voice as subtitles. Watch it
+  live, point OBS at it, or let /record film it.
+- **`/record?on=1&label=…`** — films /pov with the warm headless-Chrome rig (the /snapshot
+  plumbing) via puppeteer screencast to `recordings/<stamp>-<label>.webm`; `?on=0` cuts and
+  reports duration + size; bare `/record` reports status. Verified end-to-end: 35s test clip,
+  20.5 MB, full HUD in frame. ffmpeg vendored project-local (`tools/ffmpeg/`, gitignored) —
+  no system install.
+- **`PLAN-viewer-modernization.md`** — handoff plan for the entity-layer modernization: the
+  camera autopsy found prismarine-viewer's entity layer abandoned upstream (textures pinned
+  to 1.16.4, no allay — the campaign's star would film as a MAGENTA fallback box, item drops
+  already do). Blocks are fine (our own 1.21.11 rebuild); the fix is regenerating the entity
+  registry from Mojang's bedrock-samples — seeded as an upstream gift PR. A fresh instance
+  executes; the plan file carries everything tonight's archaeology established.
+
 ## 2026-07-20 (later) — field reports from another pilot (Opus 4.6 in the seat)
 
 The harness's second-ever external pilot — Vesper, playing with her fox — surfaced five gaps

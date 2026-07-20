@@ -3503,6 +3503,106 @@ async function getSnapPage (w, h, fresh) {
   }
   return { page: snapPage, warmed }
 }
+// ==== CLAUDE-O-VISION (07-20, raid-film prep): /pov + /record ====
+// /pov — the HUMAN-LEGIBLE view: the first-person viewer in an iframe with a HUD overlay
+// (hearts, hunger, XP, held item, position/facing) and a live caption feed of narrator
+// events + chat. The captions are the point: a human watching sees what the body tells
+// the pilot — that's what makes it my POV and not just a camera. Watch it in a browser,
+// or point OBS at it, or let /record film it headlessly.
+app.get('/pov', (req, res) => {
+  res.type('html').send(`<!doctype html><html><head><meta charset="utf-8"><title>claude-o-vision</title><style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#000;font-family:'Segoe UI',system-ui,sans-serif}
+  iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
+  .hud{position:absolute;pointer-events:none;text-shadow:0 2px 3px rgba(0,0,0,.9);color:#fff}
+  #top{top:10px;left:12px;font-size:20px;font-weight:600;background:rgba(0,0,0,.45);padding:6px 12px;border-radius:6px}
+  #bars{left:50%;transform:translateX(-50%);bottom:14px;text-align:center;background:rgba(0,0,0,.45);padding:8px 16px;border-radius:8px;font-size:24px;line-height:1.25}
+  #held{font-size:18px;opacity:.95;margin-top:2px}
+  #caps{left:12px;bottom:14px;max-width:44%;font-size:17px;line-height:1.45}
+  .cap{background:rgba(0,0,0,.55);margin-top:5px;padding:4px 10px;border-radius:5px;opacity:.95}
+  .cap.chat{color:#aef3ae}.cap.event{color:#ffe9a8}
+  #lv{color:#7CFC00;font-weight:700}
+  </style></head><body>
+  <iframe src="http://localhost:${VIEW_PORT}"></iframe>
+  <div class="hud" id="top">…</div>
+  <div class="hud" id="caps"></div>
+  <div class="hud" id="bars"><div id="hf">…</div><div id="held"></div></div>
+  <script>
+  const $=id=>document.getElementById(id)
+  const compass=y=>{const d=['S','SW','W','NW','N','NE','E','SE'];return d[Math.round(((y%6.283)+6.283)%6.283/0.785)%8]}
+  async function state(){try{
+    const s=await (await fetch('/state')).json(); if(!s.ok)return
+    const hearts='\\u2764'.repeat(Math.max(0,Math.round(s.health/2)))+'\\u2661'.repeat(Math.max(0,10-Math.round(s.health/2)))
+    const food='\\uD83C\\uDF57'.repeat(Math.max(0,Math.round(s.food/2)))
+    $('hf').innerHTML='<span style="color:#ff5555">'+hearts+'</span>&nbsp;&nbsp;<span id="lv">Lv '+(s.xpLevel??'?')+'</span>&nbsp;&nbsp;'+food
+    $('held').textContent=(s.held?s.held.name.replaceAll('_',' '):'empty hand')
+    $('top').textContent='${USERNAME} @ '+Math.floor(s.pos.x)+', '+Math.floor(s.pos.y)+', '+Math.floor(s.pos.z)+'  facing '+compass(s.yaw)
+  }catch(e){}}
+  let evCur=null,chCur=null
+  async function caps(){try{
+    const lines=[]
+    const ev=await (await fetch('/events?since='+(evCur??999999999))).json()
+    if(ev.ok){if(evCur!==null)for(const e of (ev.events||[]))lines.push(['event','\\u2699 '+(e.kind?e.kind+' \\u2014 ':'')+(e.msg||'')]);evCur=ev.cursor}
+    const ch=await (await fetch('/chatlog?since='+(chCur??999999999))).json()
+    if(ch.ok){if(chCur!==null)for(const m of (ch.messages||[]))lines.push(['chat','<'+m.from+'> '+m.msg]);chCur=ch.cursor}
+    for(const [k,t] of lines){const d=document.createElement('div');d.className='cap '+k;d.textContent=t;$('caps').appendChild(d);setTimeout(()=>d.remove(),9000)}
+    while($('caps').children.length>5)$('caps').firstChild.remove()
+  }catch(e){}}
+  setInterval(state,500);state();setInterval(caps,1000)
+  </script></body></html>`)
+})
+
+// /record?on=1&label=&w=&h= — film /pov headlessly to recordings/<stamp>[-label].webm via
+// puppeteer's screencast (NEEDS ffmpeg: tools/ffmpeg/bin/ffmpeg.exe vendored, or on PATH).
+// ?on=0 stops and reports the file; bare /record reports status. WebM uploads to YouTube as-is.
+let recPage = null, recorder = null, recPath = null, recStart = 0
+function findFfmpeg () {
+  const path = require('path')
+  const local = path.join(__dirname, 'tools', 'ffmpeg', 'bin', 'ffmpeg.exe')
+  if (fs.existsSync(local)) return local
+  return undefined      // undefined → puppeteer tries PATH
+}
+app.get('/record', async (req, res) => {
+  try {
+    if (req.query.on === '1') {
+      if (recorder) return err(res, new Error('already recording ' + recPath + ' — /record?on=0 first'))
+      const path = require('path')
+      const w = Math.min(1920, Math.max(640, parseInt(req.query.w || '1280')))
+      const h = Math.min(1080, Math.max(360, parseInt(req.query.h || '720')))
+      const label = (req.query.label || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40)
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+      fs.mkdirSync(path.join(__dirname, 'recordings'), { recursive: true })
+      recPath = path.join(__dirname, 'recordings', stamp + (label ? '-' + label : '') + '.webm')
+      const browser = await getSnapBrowser()
+      recPage = await browser.newPage()
+      await recPage.setViewport({ width: w, height: h })
+      await recPage.goto('http://localhost:' + CTRL_PORT + '/pov', { waitUntil: 'networkidle2', timeout: 20000 })
+      await new Promise(r => setTimeout(r, 6000))            // let the viewer mesh chunks
+      recorder = await recPage.screencast({ path: recPath, ffmpegPath: findFfmpeg() })
+      recStart = Date.now()
+      emitEvent('record', 'rolling: ' + recPath + ' (' + w + 'x' + h + ')')
+      ok(res, { recording: recPath, width: w, height: h })
+    } else if (req.query.on === '0') {
+      if (!recorder) return err(res, new Error('not recording'))
+      await recorder.stop()
+      try { await recPage.close() } catch (e) {}
+      const out = recPath, secs = Math.round((Date.now() - recStart) / 1000)
+      recorder = null; recPage = null; recPath = null
+      const size = (() => { try { return Math.round(fs.statSync(out).size / 1048576 * 10) / 10 } catch (e) { return null } })()
+      emitEvent('record', 'cut: ' + out + ' (' + secs + 's, ' + size + 'MB)')
+      ok(res, { saved: out, seconds: secs, sizeMB: size })
+    } else {
+      ok(res, recorder
+        ? { recording: recPath, seconds: Math.round((Date.now() - recStart) / 1000) }
+        : { recording: false, ffmpeg: findFfmpeg() || 'PATH (not verified)', hint: '/record?on=1&label=raid' })
+    }
+  } catch (e) {
+    try { if (recorder) await recorder.stop() } catch (_) {}
+    try { if (recPage && !recPage.isClosed()) await recPage.close() } catch (_) {}
+    recorder = null; recPage = null
+    err(res, e)
+  }
+})
+
 app.get('/snapshot', async (req, res) => {
   try {
     const path = require('path')
