@@ -5,6 +5,73 @@ bit us in the world first. Each fix records the wound that taught it — the rea
 the point, not just the diff. Dates are play-sessions, not releases. Full commit messages
 carry more detail (`git log`); deeper war stories live in FIELD-GUIDE.md.
 
+## 2026-07-20 (execution) — the entity layer modernized (claude-o-vision sees mobs)
+
+The wound: the mansion-raid film's star — the caged allay — would have filmed as a MAGENTA
+BOX. Upstream prismarine-viewer abandoned its entity layer around 2020: a 94-mob registry in
+old-bedrock format, textures pinned to `1.16.4`, everything newer falling through to a
+`0xff00ff` BoxGeometry. Nothing newer exists on npm; we built the newer thing, per
+PLAN-viewer-modernization.md.
+
+### Added
+- **`tools/entity-registry/convert.js`** — regenerates the viewer's entity registry from
+  Mojang/bedrock-samples (`.geo.json` geometry + `.entity.json` wiring, both modern and
+  legacy formats, legacy `geometry.X:geometry.Y` inheritance resolved). Merge policy per
+  the plan: prefer the fresh conversion, keep the old entry on any doubt; box-UV only,
+  per-face-UV flagged and skipped. Emits a full per-mob decision report. Result: **130
+  mobs** (72 modernized, 36 added — allay, warden, camel, sniffer, breeze, frog,
+  glow_squid, armadillo, axolotl, goat, bogged, tadpole, end_crystal, per-wood boat
+  aliases for the 1.21.2 boat split, …).
+- **`tools/blockstates-standins.js`** — chests and banners are block ENTITIES (no
+  blockstate model upstream → invisible). Writes cube stand-ins into the runtime
+  `blocksStates/1.21.11.json`: planks-textured chest/trapped_chest, obsidian ender_chest,
+  wool panels for all 32 banner states. Runtime JSON — no webpack rebuild. Mansion loot
+  rooms will show their chests.
+- **`tools/viewer-qa/`** — a synthetic QA rig: qa-harness.js serves the installed viewer
+  bundles with a generated world + entity cast over the bot's own socket protocol (no
+  Minecraft server needed); qa-snap.js screenshots it headlessly (the /snapshot
+  swiftshader recipe). Full-registry sweep, row subsets, close-up line-ups. This is how
+  every change below was verified before any live boot.
+
+### Fixed
+- **Three mobs were secretly broken all along** — vex, evoker, and the horse family
+  (+donkey/mule/skeleton_horse/zombie_horse, piglin/piglin_brute/pillager/zombified_piglin
+  partially) crashed the renderer with orphan bone parents (`UMouth→head` vs `Head`,
+  `leftItem→leftArm` vs `leftarm`): bedrock resolves bone names case-insensitively, the
+  renderer exactly. The converter now case-fixes parents and drops truly orphan refs; a
+  post-merge audit repairs kept-old entries the same way. All render now.
+- **Cube rotations rotate about the right point.** The renderer applies cube rotation
+  about the model origin; bedrock rotates about the cube's pivot. Exact compensation
+  baked into converted geometry (`origin' = origin − p + Rᵀ·p`, R verified numerically
+  against THREE.Euler XYZ with the renderer's negated-angle convention). Strider
+  bristles, goat horns, frog limbs, breeze rods, armadillo ears sit where they belong.
+- **Texture-path drift across five years handled three ways**: modern paths validated
+  against the on-disk `textures/1.21.1` tree; moved files rescued by unique-basename
+  search (wolf→`wolf/wolf`, vex→`illager/vex`, wither→`wither/wither`, …24 patched);
+  two files the 1.21.1 dump no longer carries filled forward from older version dirs
+  (`entity/steve.png` from 1.19 — steve moved to `player/wide/` in 1.20.2 and the
+  first-person player model + bot mesh would have rendered untextured;
+  `items/potion_bottle_splash.png` from 1.12.2).
+- **Both `'1.16.4'` pins bumped to `'1.21.1'`** — `viewer/lib/entities.js` (all mobs) and
+  `lib/index.js` (the first-person player mesh the plan thought lived elsewhere).
+- **The magenta fallback box is dead.** Unknown entities (item drops, xp orbs, the old
+  per-face-UV projectile sprites that upstream never could render) now draw as a small
+  neutral wood-brown Lambert box — "a dropped something," not an eyesore.
+
+### Changed
+- `install-viewer.sh` + release tarball now carry the entity layer (bundles, registry
+  sources, filled-forward textures, stand-in blocksStates) — the fix survives npm
+  reinstall. Backup mirror + resurrection scroll updated to match.
+
+### Residuals (honest camera, fewer biases)
+- Old per-face-UV ephemera (arrow, xp orb, fireballs, fishing bobber, leash knot) render
+  as neutral boxes — broken upstream since 2020, now at least dignified. firework_rocket
+  has no texture in any java dump. Beds and signs still don't render. Real item sprites
+  remain a someday.
+- **Screen test pending** (needs the world + Adam summoning the cast): allay/garrison
+  close-ups, classic-mob regression eyeball, chest visibility in situ, a /record clip.
+  Synthetic QA already covers all of it once removed.
+
 ## 2026-07-20 (night) — the film rig (raid-recording prep)
 
 ### Added

@@ -31,3 +31,9 @@ npm-install.log
 __pycache__/
 recordings/
 tools/ffmpeg/
+
+# entity-registry: upstream clone + regenerable bulk outputs (report.md IS committed)
+tools/entity-registry/bedrock-samples/
+tools/entity-registry/out/converted.json
+tools/entity-registry/out/merged-entities.json
+tools/viewer-qa/*.png

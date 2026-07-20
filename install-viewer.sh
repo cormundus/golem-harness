@@ -7,6 +7,13 @@
 # modern minecraft-data + a synthesized 1.21.11 atlas, plus a fix for the upstream
 # stairs-never-render bug (prismarine-viewer#427).
 #
+# 07-20: they also carry a MODERNIZED ENTITY LAYER — the registry regenerated from
+# Mojang/bedrock-samples (130 mobs: allay, warden, camel, sniffer, breeze, frog, ...,
+# fixed vex/evoker/horse-family), texture pins bumped 1.16.4 → 1.21.1, a neutral
+# fallback box instead of magenta, and chest/banner stand-ins in blocksStates.
+# Regenerate the registry: tools/entity-registry/convert.js; stand-ins:
+# tools/blockstates-standins.js.
+#
 # If your server is 1.21.4 or older you do NOT need this — the stock viewer is fine.
 #
 # Run AFTER `npm install` (which wipes node_modules patches):
@@ -48,6 +55,13 @@ cp "$TMP/public/worker.js" "$DEST/public/worker.js"
 cp -r "$TMP/public/textures/."     "$DEST/public/textures/"
 cp -r "$TMP/public/blocksStates/." "$DEST/public/blocksStates/"
 cp "$TMP/version.js" "$DEST/viewer/lib/version.js"
+# entity-layer sources (07-20 modernization) — keep node_modules sources in sync with
+# the bundles so a future scratch rebuild starts from what is actually deployed
+if [ -d "$TMP/viewer-lib-src" ]; then
+  cp "$TMP/viewer-lib-src/entities.js"   "$DEST/viewer/lib/entities.js"
+  cp "$TMP/viewer-lib-src/entities.json" "$DEST/viewer/lib/entity/entities.json"
+  cp "$TMP/viewer-lib-src/index.js"      "$DEST/lib/index.js"
+fi
 rm -rf "$TMP"
 
 echo "viewer bundles installed — the camera tells the truth on 1.21.11."

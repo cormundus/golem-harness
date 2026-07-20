@@ -88,8 +88,8 @@ the air connected to the bot's own body: a sealed cavern's contents are as invis
 **`/snapshot` — the camera.** A real PNG from the viewer, which the model reads as an image. Historically
 its hardest, least-trusted sense — until the day it became a telescope: the camera renders far beyond
 the 48-block ray range, so horizon photography from a self-built pillar is how the bot scouts distant
-terrain. Its known artifacts (item drops render magenta, fences render fat) are documented, because a
-witness should know its own instrument.
+terrain. Its known artifacts (item drops render as small neutral boxes, fences render fat) are
+documented, because a witness should know its own instrument.
 
 ## How the model remembers
 
@@ -226,9 +226,13 @@ this project is unaffiliated fan tooling in the long mineflayer tradition.
   before the drill, or two systems fight for the legs). Residual: a door whose panel sits parallel to
   the walk corridor leaves centimeters of clearance, and the drill aims for cell center; it recovers,
   but sticks briefly. Free-band aiming is queued.
-- **The browser viewer never renders block entities** (beds, chests, signs — upstream limitation),
-  item drops render as magenta cubes, and very new (1.21.9+) flora and banners render as
-  missing-texture boxes. The text senses are the authority; the camera is a witness with known biases.
+- **The browser viewer's entity layer was modernized locally (07-20)** — upstream abandoned it in
+  ~2020 (94 mobs, 1.16.4 textures, modern mobs as magenta boxes). The registry is regenerated from
+  Mojang/bedrock-samples (`tools/entity-registry/convert.js`, 130 mobs — allay, warden, camel,
+  sniffer, breeze, and the silently-broken vex/evoker/horse family fixed). Chests and banners get
+  cube stand-ins (`tools/blockstates-standins.js`); other block entities (beds, signs) still don't
+  render, item drops and old projectile sprites render as small neutral boxes. The text senses are
+  the authority; the camera is a witness with known — and now fewer — biases.
 - **The combat layer now obeys the same fairness gate as the eyes** — the threat watcher and the
   proximity alarm both require shared connected air (sealed hostiles may be *heard*, never tracked),
   with one honest exception: an attacker that has landed a hit on the bot announced itself through
