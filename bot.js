@@ -830,17 +830,31 @@ const GATHER_MAX_RISE = 4   // don't target logs more than ~4 above feet — out
 // walk=false: place from where I stand, NO pathfinder trip. The dig verbs (stair/tunnel) depend on
 // the bot staying ON its launch cell — a GoalNear walk here once dragged the bot off mid-step and
 // the follow-up nudge chased a target from 4 blocks away (the 07-11 open-terrain ascend stall).
+// ---- SOFT COVER (07-20, a 4.6 pilot's field report): thin snow and soft plants read as
+// "occupied" to naive cell checks — layer snow's boundingBox even lies ('block') — but the
+// game treats them as replaceable, and snowfall RE-COVERS half-built courses in cold biomes,
+// so a snowy plain bricked every build verb with "cell occupied by snow" / silent skips.
+// Doctrine: never treat soft cover as an obstacle OR as a reference face; break it (instant
+// with any tool) so placement lands in honest air.
+const SOFT_COVER = new Set(['snow', 'short_grass', 'grass', 'tall_grass', 'fern', 'large_fern', 'dead_bush'])
+const isSoftCover = (b) => !!b && SOFT_COVER.has(b.name)
+async function clearSoftCover (p) {
+  const b = bot.blockAt(p)
+  if (isSoftCover(b)) { try { await bot.dig(b) } catch (e) {} }
+  return bot.blockAt(p)
+}
+
 async function macroPlaceAt(Vec3, x, y, z, names, walk = true) {
   const target = new Vec3(x, y, z)
   const tb = bot.blockAt(target)
-  if (tb && tb.boundingBox === 'block') return { done: true, skipped: true }
+  if (tb && tb.boundingBox === 'block' && !isSoftCover(tb)) return { done: true, skipped: true }
   let ref = null, face = null
   const below = bot.blockAt(new Vec3(x, y - 1, z))
-  if (below && below.boundingBox === 'block') { ref = below; face = new Vec3(0, 1, 0) }
+  if (below && below.boundingBox === 'block' && !isSoftCover(below)) { ref = below; face = new Vec3(0, 1, 0) }
   else {
     for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
       const nb = bot.blockAt(new Vec3(x + dx, y, z + dz))
-      if (nb && nb.boundingBox === 'block') { ref = nb; face = new Vec3(-dx, 0, -dz); break }
+      if (nb && nb.boundingBox === 'block' && !isSoftCover(nb)) { ref = nb; face = new Vec3(-dx, 0, -dz); break }
     }
   }
   if (!ref) return { done: false }
@@ -850,6 +864,7 @@ async function macroPlaceAt(Vec3, x, y, z, names, walk = true) {
   if (!it) return { done: false, noItem: true }
   try {
     if (walk) await bot.pathfinder.goto(new goals.GoalNear(x, y, z, 3))
+    await clearSoftCover(target)
     await bot.equip(it, 'hand')
     await bot.lookAt(target.offset(0.5, 0.5, 0.5), true)
     await bot.placeBlock(ref, face)
@@ -2428,7 +2443,8 @@ app.get('/place', async (req, res) => {
       const below = base.offset(dx, -1, dz)
       const spotBlock = bot.blockAt(spot)
       const belowBlock = bot.blockAt(below)
-      if (spotBlock && spotBlock.name === 'air' && belowBlock && belowBlock.boundingBox === 'block') {
+      if (spotBlock && (spotBlock.name === 'air' || isSoftCover(spotBlock)) && belowBlock && belowBlock.boundingBox === 'block' && !isSoftCover(belowBlock)) {
+        await clearSoftCover(spot)
         await bot.lookAt(spot.offset(0.5, 0.5, 0.5), true)
         await bot.placeBlock(belowBlock, new Vec3(0, 1, 0))
         placed = below
@@ -2614,14 +2630,15 @@ app.get('/outline', async (req, res) => {
       let ground = null
       for (let y = startY + 4; y > startY - 6; y--) {
         const b = bot.blockAt(new Vec3(x, y, z))
-        if (b && b.boundingBox === 'block') { ground = b; break }
+        if (b && b.boundingBox === 'block' && !isSoftCover(b)) { ground = b; break }
       }
       if (!ground) { failed++; continue }
       const target = ground.position.offset(0, 1, 0)
       const tb = bot.blockAt(target)
-      if (tb && tb.name !== 'air') { skipped++; continue }
+      if (tb && tb.name !== 'air' && !isSoftCover(tb)) { skipped++; continue }
       try {
         await bot.pathfinder.goto(new goals.GoalNear(target.x, target.y, target.z, 2))
+        await clearSoftCover(target)
         await bot.equip(it, 'hand')
         await bot.lookAt(target.offset(0.5, 0.5, 0.5), true)
         await bot.placeBlock(ground, new Vec3(0, 1, 0))
@@ -2734,14 +2751,15 @@ app.get('/walls', async (req, res) => {
         const y = base + k
         const target = new Vec3(x, y, z)
         const tb = bot.blockAt(target)
-        if (tb && tb.boundingBox === 'block') { skipped++; continue }
+        if (tb && tb.boundingBox === 'block' && !isSoftCover(tb)) { skipped++; continue }
         const ref = bot.blockAt(new Vec3(x, y - 1, z))
-        if (!ref || ref.boundingBox !== 'block') { failed++; continue }
+        if (!ref || ref.boundingBox !== 'block' || isSoftCover(ref)) { failed++; continue }
         const matName = (k === 0) ? baseMat : wallMat
         let it = bot.inventory.items().find(m => m.name === matName)
         if (!it) it = bot.inventory.items().find(m => m.name === wallMat || m.name === baseMat)
         if (!it) { failed++; continue }
         try {
+          await clearSoftCover(target)
           await bot.equip(it, 'hand')
           await bot.lookAt(target.offset(0.5, 0.5, 0.5), true)
           await bot.placeBlock(ref, new Vec3(0, 1, 0))
@@ -2881,21 +2899,22 @@ app.get('/placeitem', async (req, res) => {
     const it = bot.inventory.items().find(i => i.name === name)
     if (!it) return err(res, new Error(`no ${name} in inventory`))
     const tb = bot.blockAt(new Vec3(x, y, z))
-    if (tb && tb.name !== 'air' && tb.boundingBox !== 'empty') return err(res, new Error(`cell occupied by ${tb.name}`))
+    if (tb && tb.name !== 'air' && tb.boundingBox !== 'empty' && !isSoftCover(tb)) return err(res, new Error(`cell occupied by ${tb.name}`))
     // ref: prefer the block below (top-face place); else chain sideways off any solid
     // neighbor — courses in mid-air (roof stairs, ridge lines) grow E/W from the gable
     // ends with nothing underneath them.
     let ref = bot.blockAt(new Vec3(x, y - 1, z))
     let faceVec = new Vec3(0, 1, 0)
-    if (!ref || ref.boundingBox !== 'block') {
+    if (!ref || ref.boundingBox !== 'block' || isSoftCover(ref)) {
       ref = null
       for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
         const nb = bot.blockAt(new Vec3(x + dx, y, z + dz))
-        if (nb && nb.boundingBox === 'block') { ref = nb; faceVec = new Vec3(-dx, 0, -dz); break }
+        if (nb && nb.boundingBox === 'block' && !isSoftCover(nb)) { ref = nb; faceVec = new Vec3(-dx, 0, -dz); break }
       }
       if (!ref) return err(res, new Error('nothing solid below or beside the target to place against'))
     }
     await bot.pathfinder.goto(new goals.GoalNear(x, y, z, 3))
+    await clearSoftCover(new Vec3(x, y, z))
     await bot.equip(it, 'hand')
     // face= (07-14): deliberate orientation for stairs & other facing blocks. The server derives
     // `facing` from the placer's yaw at click time (high side follows the gaze), so face=N means
@@ -2933,18 +2952,19 @@ app.get('/sign', async (req, res) => {
     const it = bot.inventory.items().find(i => i.name === itName)
     if (!it) return err(res, new Error(`no ${itName} in inventory`))
     const tb = bot.blockAt(new Vec3(x, y, z))
-    if (tb && tb.name !== 'air' && tb.boundingBox !== 'empty') return err(res, new Error(`cell occupied by ${tb.name}`))
+    if (tb && tb.name !== 'air' && tb.boundingBox !== 'empty' && !isSoftCover(tb)) return err(res, new Error(`cell occupied by ${tb.name}`))
     let ref = bot.blockAt(new Vec3(x, y - 1, z))
     let faceVec = new Vec3(0, 1, 0)
-    if (!ref || ref.boundingBox !== 'block') {
+    if (!ref || ref.boundingBox !== 'block' || isSoftCover(ref)) {
       ref = null
       for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
         const nb = bot.blockAt(new Vec3(x + dx, y, z + dz))
-        if (nb && nb.boundingBox === 'block') { ref = nb; faceVec = new Vec3(-dx, 0, -dz); break }
+        if (nb && nb.boundingBox === 'block' && !isSoftCover(nb)) { ref = nb; faceVec = new Vec3(-dx, 0, -dz); break }
       }
       if (!ref) return err(res, new Error('nothing solid below or beside the target to place against'))
     }
     await bot.pathfinder.goto(new goals.GoalNear(x, y, z, 3))
+    await clearSoftCover(new Vec3(x, y, z))
     await bot.equip(it, 'hand')
     // SNEAK while placing: the natural home of a label is ON a chest lid, and a bare click on
     // an interactable reference OPENS it instead of placing (the first /sign ever attempted
@@ -2997,14 +3017,14 @@ app.get('/roof', async (req, res) => {
     for (const [x, z] of cells) {
       const target = new Vec3(x, y, z)
       const tb = bot.blockAt(target)
-      if (tb && tb.boundingBox === 'block') { skipped++; continue }
+      if (tb && tb.boundingBox === 'block' && !isSoftCover(tb)) { skipped++; continue }
       let ref = null, face = null
       const below = bot.blockAt(new Vec3(x, y - 1, z))
-      if (below && below.boundingBox === 'block') { ref = below; face = new Vec3(0, 1, 0) }
+      if (below && below.boundingBox === 'block' && !isSoftCover(below)) { ref = below; face = new Vec3(0, 1, 0) }
       else {
         for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
           const nb = bot.blockAt(new Vec3(x + dx, y, z + dz))
-          if (nb && nb.boundingBox === 'block') { ref = nb; face = new Vec3(-dx, 0, -dz); break }
+          if (nb && nb.boundingBox === 'block' && !isSoftCover(nb)) { ref = nb; face = new Vec3(-dx, 0, -dz); break }
         }
       }
       if (!ref) { failed++; continue }
@@ -3015,6 +3035,7 @@ app.get('/roof', async (req, res) => {
         // hunt for a way up and burn a 10s timeout per cell (the helmsman watched the bot stand still, 07-12)
         const eyeDist = bot.entity.position.offset(0, 1.62, 0).distanceTo(target.offset(0.5, 0.5, 0.5))
         if (eyeDist > 4.2) { try { await bot.pathfinder.goto(new goals.GoalNear(x, y - 4, z, 1)) } catch (e) {} }
+        await clearSoftCover(target)
         await bot.equip(it, 'hand')
         await bot.lookAt(target.offset(0.5, 0.5, 0.5), true)
         await bot.placeBlock(ref, face)

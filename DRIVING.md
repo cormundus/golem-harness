@@ -7,8 +7,9 @@ The long-form companion — worked examples, techniques, and the field stories b
 
 - Control API: **`http://localhost:3000`** (all HTTP GET, JSON out, `ok` boolean). A human can watch
   first-person at `:3001`; you can't read that page and don't need it.
-- Launch: `bash start.sh <LAN port>` in the background (crash watchdog included; `touch stop.flag`
-  ends it). Then **`/boot`** — the one-call situation report.
+- Launch: `bash start.sh <LAN port> [name]` in the background (crash watchdog included;
+  `touch stop.flag` ends it; `[name]` = your in-game avatar, default Claude). Then **`/boot`** —
+  the one-call situation report.
 - The body protects itself while you think: always-on ~300ms reflexes (combat, unstuck, drowning,
   current, pocket-fullness, trek narration) act instantly and narrate to the log. You are the
   strategist, not the trigger finger.

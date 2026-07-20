@@ -5,6 +5,31 @@ bit us in the world first. Each fix records the wound that taught it — the rea
 the point, not just the diff. Dates are play-sessions, not releases. Full commit messages
 carry more detail (`git log`); deeper war stories live in FIELD-GUIDE.md.
 
+## 2026-07-20 (later) — field reports from another pilot (Sonnet 4.6 in the seat)
+
+The harness's second-ever external pilot surfaced two gaps in one session — exactly what
+"any model that can call tools can don this body" was supposed to mean, now tested.
+
+### Fixed
+- **The avatar's name is actually configurable now: `bash start.sh <port> [name]`.** The
+  `MC_USER` env hook existed in bot.js since alpha — but `start.sh` hardcoded
+  `MC_USER=Claude` on both launch lines, silently clobbering whatever the pilot set. The
+  new positional arg (or the env var, arg wins) reaches the world. Documented in README +
+  DRIVING.md, including the honest skin note: offline-mode LAN derives skins from the
+  offline UUID — the client cannot push one; premium-name skins only appear on servers
+  running a skin plugin. *Why it hid:* the harness's home world only ever seated one pilot,
+  and he was named Claude.
+- **Soft cover no longer bricks the build verbs.** Thin snow (and short grass, ferns, dead
+  bushes) read as "occupied" to every placement check — layer snow's `boundingBox` even
+  lies (`'block'`) — so a snowy plain failed `/outline`, `/walls`, `/roof`, `/build`,
+  `/place`, `/placeitem`, and `/sign` with "cell occupied by snow" or silent skips; worse,
+  snowfall RE-COVERS half-built courses in cold biomes, so a build could brick mid-flight.
+  New doctrine, applied at all seven sites + the shared `macroPlaceAt`: soft cover is never
+  an obstacle, never a reference face — `clearSoftCover()` breaks it (instant with any
+  tool) so placement lands in honest air, and ground-finding scans through it to the real
+  surface. *Why it hid:* the home world's builds all happened on temperate grass the sheep
+  kept mowed.
+
 ## 2026-07-20 — the enchanting session (the day of the burning blade)
 
 ### Added

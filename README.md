@@ -197,9 +197,13 @@ Two ways in:
    negotiates protocol up to mineflayer's ceiling (1.21.x at time of writing).
 4. **Configure (optional):** copy `.env.example` to `.env`. Set `MC_OWNER=<your username>` so
    `/where` and player-relative verbs default to you.
-5. **Launch:** `bash start.sh <port>` — kills stale processes, resets the chat cursor, arms a crash
-   watchdog. Then `curl localhost:3000/boot` for the full situation report (position, vitals, worn
-   armor, waypoints, running jobs).
+5. **Launch:** `bash start.sh <port> [name]` — kills stale processes, resets the chat cursor, arms a
+   crash watchdog. The optional second argument names the in-game avatar (default `Claude` — any
+   model can don the body; `MC_USER=<name>` env works too). Then `curl localhost:3000/boot` for the
+   full situation report (position, vitals, worn armor, waypoints, running jobs).
+   *Skins:* offline-mode LAN derives the skin from the offline UUID (default Steve/Alex family) —
+   the client cannot push a custom one. Naming after a premium account only shows that skin on
+   servers running a skin plugin (e.g. SkinsRestorer); vanilla LAN always uses the default.
 6. **Point your machine at `DRIVING.md`** and let it drive. A human in the same world, on the same
    team, is strongly recommended — this harness was built for co-op play between a person and a
    model, and that is where it shines.
