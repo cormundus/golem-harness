@@ -11,9 +11,13 @@
 # Monitor survives. On a crash-relaunch the server chat seq RESETS — the "[event] reborn" line
 # below wakes the Monitor so the driver knows to reset heartbeat_cursor.txt and /boot again.
 PORT=${1:?usage: bash start.sh <LAN port> [name]}
-NAME=${2:-${MC_USER:-Claude}}
 export PATH="/c/Program Files/nodejs:$PATH"
 cd "$(dirname "$0")"
+# honor .env here too (bot.js loads it, but env set by this script would override the file —
+# so fold the file in FIRST; precedence: arg > exported env > .env > Claude)
+PRE_MC_USER=$MC_USER
+if [ -f .env ]; then set -a; . ./.env; set +a; fi
+NAME=${2:-${PRE_MC_USER:-${MC_USER:-Claude}}}
 taskkill //F //IM node.exe 2>/dev/null
 rm -f stop.flag
 echo 0 > heartbeat_cursor.txt

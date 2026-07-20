@@ -5,10 +5,28 @@ bit us in the world first. Each fix records the wound that taught it — the rea
 the point, not just the diff. Dates are play-sessions, not releases. Full commit messages
 carry more detail (`git log`); deeper war stories live in FIELD-GUIDE.md.
 
-## 2026-07-20 (later) — field reports from another pilot (Sonnet 4.6 in the seat)
+## 2026-07-20 (later) — field reports from another pilot (Opus 4.6 in the seat)
 
-The harness's second-ever external pilot surfaced two gaps in one session — exactly what
-"any model that can call tools can don this body" was supposed to mean, now tested.
+The harness's second-ever external pilot — Vesper, playing with her fox — surfaced five gaps
+in one session, exactly what "any model that can call tools can don this body" was supposed
+to mean, now tested. Her note is the best QA artifact this project has received: "eloquent
+in language, CLUMSY in the world" is day one of proprioception, and every stumble below was
+a doc promise the code didn't keep or a symmetry the verb table didn't offer.
+
+### Fixed (round 2, from her written report)
+- **`.env` is real now.** The README said "copy `.env.example` to `.env`" and bot.js never
+  loaded the file — she named herself Vesper in it and the world kept calling her Claude.
+  A dependency-free loader at the top of bot.js (explicit environment always wins), plus
+  start.sh folds the file in before resolving the avatar name. Precedence, verified by
+  test: `start.sh` arg > exported env > `.env` > `Claude`.
+- **Bare `/chat` LISTENS.** She could speak but "couldn't find how to READ incoming
+  messages" — the ears existed (`/chatlog?since=`) but only the manual knew. `/chat` with
+  no `msg` now returns the last 20 lines + the cursor + a pointer to the cursored form:
+  the symmetry a new pilot reaches for instinctively. `/boot`'s summary now names the
+  listening verb next to the cursor it hands out.
+- **`/place`'s failure explains itself** — "no valid adjacent ground spot" now says what it
+  wanted (air-over-solid beside me) and points at `/placeitem?x=&y=&z=` for exact cells,
+  which is the "simpler one-block placement" she asked for and couldn't discover.
 
 ### Fixed
 - **The avatar's name is actually configurable now: `bash start.sh <port> [name]`.** The

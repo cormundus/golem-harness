@@ -8,6 +8,16 @@ const express = require('express')
 const fs = require('fs')
 const { Vec3 } = require('vec3')
 
+// .env support (07-20, the second pilot's report: "showing Claude not Vesper despite the
+// .env setting") — the README promised .env configuration but nothing ever LOADED the file.
+// Hand-rolled so there's no new dependency; explicit environment always wins over the file.
+try {
+  for (const line of fs.readFileSync(require('path').join(__dirname, '.env'), 'utf8').split('\n')) {
+    const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/)
+    if (m && !(m[1] in process.env)) process.env[m[1]] = m[2].replace(/^["']|["']$/g, '')
+  }
+} catch (e) {}
+
 const HOST = process.env.MC_HOST || 'localhost'
 const PORT = parseInt(process.env.MC_PORT || '25565')
 const VERSION = process.env.MC_VERSION || '1.21.8'
@@ -2451,7 +2461,7 @@ app.get('/place', async (req, res) => {
         break
       }
     }
-    if (!placed) return err(res, new Error('no valid adjacent ground spot'))
+    if (!placed) return err(res, new Error('no valid adjacent ground spot (need air-over-solid beside me) — for an exact cell use /placeitem?name=&x=&y=&z= instead'))
     ok(res, { placed: name, on: round(placed) })
   } catch (e) { err(res, e) }
 })
@@ -2507,7 +2517,19 @@ app.get('/lookat', async (req, res) => {
   } catch (e) { err(res, e) }
 })
 
-app.get('/chat', (req, res) => { bot.chat(req.query.msg || ''); ok(res, { said: req.query.msg }) })
+// /chat?msg= speaks; /chat with NO msg LISTENS (last 20 lines + cursor) — the symmetry the
+// second pilot reached for instinctively ("I can SEND chat but couldn't find how to READ
+// incoming messages", 07-20). /chatlog?since= remains the cursored form for the heartbeat.
+app.get('/chat', (req, res) => {
+  if (req.query.msg === undefined) {
+    return ok(res, {
+      cursor: chatSeq,
+      recent: chatLog.slice(-20),
+      hint: 'poll /chatlog?since=<cursor> for only-new messages; /chat?msg=... to speak'
+    })
+  }
+  bot.chat(req.query.msg || ''); ok(res, { said: req.query.msg })
+})
 app.get('/chatlog', (req, res) => {
   const since = parseInt(req.query.since || '0')
   ok(res, { cursor: chatSeq, messages: chatLog.filter(m => m.id > since) })
@@ -3893,7 +3915,7 @@ app.get('/boot', (req, res) => {
       ((bot.inventory.slots[45] && bot.inventory.slots[45].name) ? `Offhand: ${bot.inventory.slots[45].name}. ` : '') +
       skyPhrase(oh) + (around ? `Around: ${around}. ` : '') +
       (jl.length ? `RUNNING JOBS: ${jl.map(j => j.id + ':' + j.name).join(', ')}. ` : 'No jobs running. ') +
-      `Chat cursor: ${chatSeq} (write this to heartbeat_cursor.txt).`
+      `Chat cursor: ${chatSeq} (write this to heartbeat_cursor.txt; HEAR chat via /chatlog?since=<cursor> or bare /chat).`
     ok(res, {
       summary, pos: round(pos), health: bot.health, food: bot.food, xpLevel: bot.experience.level, held, armor,
       sky: oh, chatSeq, seenCells: SEEN.size,
