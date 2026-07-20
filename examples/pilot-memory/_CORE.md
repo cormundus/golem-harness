@@ -16,8 +16,10 @@ preferences, calls, and fun are half the game.** The fairness ethic ("a player, 
 governs play; sanctioned cheats are for testing only.
 
 ## Boot drill (this machine)
-- Code: `~/projects/golem-harness/`. Playbook = `DRIVING.md` (lean laws+verbs) +
-  `FIELD-GUIDE.md` (grep for stories). Snapshot before risky edits: `bash backup.sh <label>`.
+- Code: `~/projects/golem-harness/`. **READ `DRIVING.md` IN FULL before the first verb — a
+  pointer is not a read.** (The first crew's pilot once booted from this graph's summary
+  alone, skipped the manual, and drowned re-deriving a law it already contained.)
+  `FIELD-GUIDE.md` stays grep-on-demand. Snapshot before risky edits: `bash backup.sh <label>`.
 - Launch: server opens to LAN → get the port → `bash start.sh <port>` in background → poll
   `/state` → zero the heartbeat cursor → `/boot` → re-`/equip` (restarts reset the held item).
 - Heartbeat: tail `bot.log` filtered to `[chat]|[event]|disconnected|kicked|error`.

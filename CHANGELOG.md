@@ -5,6 +5,42 @@ bit us in the world first. Each fix records the wound that taught it — the rea
 the point, not just the diff. Dates are play-sessions, not releases. Full commit messages
 carry more detail (`git log`); deeper war stories live in FIELD-GUIDE.md.
 
+## 2026-07-19 — the gear-up session (the day of the manual)
+
+### Added
+- **`examples/pilot-memory/`** — the pilot's cross-session continuity system as a worked
+  example: tiered memory graph (always-load `_CORE` under a hard token cap, `state/` updated
+  in place, `episodes/` append-only, `gotchas/` grep-on-demand) plus the validator that
+  enforces the laws and renders `GRAPH.md` from the nodes. *Why:* the harness remembered the
+  world but shipped nothing for the mind in the seat, which dies at every context-window end.
+  Pointers added in README, `examples/README.md`, and DRIVING.md law 23.
+
+### Changed
+- **The example `_CORE.md` boot drill now leads with "READ DRIVING.md IN FULL before the
+  first verb — a pointer is not a read."** *Why:* hours after shipping the example, its own
+  author booted from the memory graph's summary, never opened the manual, guessed at verbs
+  all session, and drowned (death #5) re-deriving law 17's `/stop` drill from first
+  principles at the bottom of a river. The template inherited the same flaw; now it inherits
+  the fix, same-day. (The morning's *fictional* example episode had invented "bridge it,
+  don't swim it" as placeholder doctrine. The afternoon validated the fiction. The example
+  directory is prophecy.)
+
+### Queued, not yet shipped (today's fixes were to the pilot, not the code)
+- **Reflex/pilot goal arbitration**: death #5's mechanism — the pilot's `/goto` and the drown
+  reflex preempted each other's pathfinder goals in a loop until the oxygen bar was gone.
+  The spine must win while an emergency holds (tool-guard philosophy, applied to movement).
+- **`/bridging` auto-disarm**: left armed after a river crossing, it let the pathfinder smash
+  through a house wall by the front door 140 blocks later. A mode that outlives its moment.
+- **Scaffold consecration**: `/tidy` lists the new river bridge's 21 deck blocks as
+  reclaimable litter — deliberate infrastructure needs a way off the debt ledger.
+- **Partial-height blocks are invisible to `/blockat` and `/find` but visible to `/gaze`**:
+  a just-placed enchanting table read "not in my line of sight" point-blank. The close-range
+  senses ray-test the full cell; torches, slabs, and tables all slip through.
+- **`start.sh` PID guard**: a botched restart drill left two watchdogs alive; two writers
+  interleaved `bot.log` at independent offsets (chat lines overwriting mid-file, `tail -F`
+  wedged past a truncation, the heartbeat silently deaf). The corrected drill — hold
+  `stop.flag` until "watchdog ended" prints — was validated at this session's park.
+
 ## 2026-07-17/18 — the survival-day session (post-v0.1.0-alpha)
 
 ### Added
