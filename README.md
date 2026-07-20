@@ -110,6 +110,13 @@ Nine places and their walked connections currently fit in ~2 KB of readable JSON
 
 **`journal.md`** — the bot's own append-only trip log, written by the verbs as they succeed.
 
+All of that is the **bot's** memory — it survives restarts because it lives in the world and on
+disk. The **pilot's** memory is a different problem: the model's context window ends, and the next
+instance wakes knowing nothing. The system the first crew uses for pilot continuity — a tiered
+memory graph with an always-load core, in-place state, grep-on-demand episodes, and a validator
+that renders its index the same way `/waypoints` renders the world — ships as a worked example in
+[`examples/pilot-memory/`](examples/pilot-memory/).
+
 ## How the model survives being slow
 
 An LLM pilot's reaction time is seconds to minutes. The body compensates:

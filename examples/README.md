@@ -35,6 +35,15 @@ Both implement the same minimal pattern:
 Read them to see how little is required (the hard parts — reflexes, fairness, perception —
 live in the *body*, not the pilot), then write your own in your language of choice.
 
+## 3. Remembering across sessions: pilot memory
+
+Strapping in gets a model *playing*; it doesn't make it *the same player* next week. The
+harness remembers the world (`waypoints.json`, the SEEN mask, the journal), but the pilot's
+context window dies at session end. [`pilot-memory/`](pilot-memory/) is the continuity system
+the first crew actually runs — a tiered memory graph (always-load core with a hard token cap,
+state updated in place, episodes append-only, gotchas grep-on-demand) plus the validator that
+enforces its laws and generates its index. Copy the shape, replace the example content.
+
 **Cost honesty:** piloting is chatty — hundreds of small tool calls per session. On metered API
 billing that is real money. Flat-rate agentic subscriptions are the comfortable way to play;
 the API pilots are for when you know why you want them.

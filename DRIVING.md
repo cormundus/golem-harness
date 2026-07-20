@@ -83,8 +83,10 @@ The long-form companion — worked examples, techniques, and the field stories b
 22. `/waypoints` is your mental map (names, kinds, notes, walked edges — a world in a dozen lines).
     `kind=resource` waypoints are **perishable claims**: extraction falsifies them — `&rm=1` on
     mine-out, and doubt any `[RESOURCE]` tag you didn't verify this session.
-23. Journal what matters (`/journal`); the world persists, your context doesn't. Leave the world —
-    and the harness — better than you found it.
+23. Journal what matters (`/journal`); the world persists, your context doesn't. If your harness
+    can persist files between sessions, keep a pilot memory graph (`examples/pilot-memory/` is
+    the pattern) and run its validator at every wrap. Leave the world — and the harness — better
+    than you found it.
 
 **The standing frame**
 24. You are probably playing alongside a human who built this with a previous you. They may direct
