@@ -72,13 +72,48 @@ const navPlaced = []   // blocks the pathfinder placed as scaffolding, awaiting 
 let considerateMoves = null    // default no-dig profile (protects builds + terrain)
 let forestryMoves = null       // lumberjack profile: may break ONLY leaves+logs (built at spawn)
 
+// ---- collectBlock cage (07-20): mineflayer-collectblock's collect() installs ITS OWN default
+// Movements (canDig=true, dontCreateFlow=false!) into the shared pathfinder and NEVER restores
+// ours — every /mine, /tidy, and table-reclaim silently swapped my legs for wall-eating legs,
+// and every walk afterward could carve through builds (the house-hole culprit — found because
+// the helmsman kept finding fresh holes). Its target gate needs canDig=true (safeToBreak
+// hard-returns false otherwise), so it can't just wear the considerate profile: hand it
+// disposable legs that may break ONLY the target's block type (+ leaves, for canopy
+// approaches), and ALWAYS give the pathfinder back the legs it was wearing before.
+async function collectSafely (block) {
+  const prev = bot.pathfinder.movements   // considerate normally; forestry mid-/gather
+  const cage = new Movements(bot)
+  cage.canDig = true
+  cage.maxDropDown = 3
+  cage.liquidCost = 15
+  cage.allow1by1towers = false
+  cage.allowParkour = true
+  cage.scafoldingBlocks = []
+  const cant = new Set()
+  for (const blk of mcData.blocksArray) {
+    if (blk.id === block.type) continue
+    if (/_leaves$/.test(blk.name)) continue
+    cant.add(blk.id)
+  }
+  cage.blocksCantBreak = cant
+  mcData.blocksArray.forEach(b => { if (b.name.endsWith('_door') && !b.name.includes('iron')) cage.openable.add(b.id) })
+  cage.canOpenDoors = true
+  bot.collectBlock.movements = cage
+  try {
+    return await bot.collectBlock.collect(block)
+  } finally {
+    bot.collectBlock.movements = null   // no stale cage lingering inside the plugin
+    if (prev) bot.pathfinder.setMovements(prev)
+  }
+}
+
 bot.once('spawn', () => {
   mcData = require('minecraft-data')(bot.version)
   const moves = new Movements(bot)
   // ---- CONSIDERATE PLAYER: don't vandalize builds/terrain, don't litter ----
   moves.canDig = false            // NEVER break blocks to travel — protects your house AND the
-                                  // landscape (no tunneling shortcuts). Tree-chopping is unaffected:
-                                  // collectBlock digs its own target directly, not via the pathfinder.
+                                  // landscape (no tunneling shortcuts). NB: collectBlock swaps in
+                                  // its own dig-legs — collectSafely() cages that (07-20).
   moves.maxDropDown = 3           // don't fling off tall ledges en route
   moves.liquidCost = 15           // (07-14, after drowning in a decorative POND mid-sheep-drive:
                                   // dry detours beat swims whenever one exists; swimming stays
@@ -1629,8 +1664,20 @@ reflexes.unshift({
           return AGGRO_CONFIRMED.has(e2.id) || entityPerceptible(e2, fill)
         }).length
         if (pack >= 3) {
-          this.fleeFrom(bot, t.e.position, `OUTNUMBERED ${pack} — fighting withdrawal, not a duel`)
-          return
+          // ALLY SUPPRESSION (the helmsman's design, 07-20, en route to the dungeon reaping):
+          // a pack is only a rout if I'm ALONE in it. A partner within 10 turns the math — two
+          // blades hold a hallway three zombies can't. Withdrawal stays armed for the solo case.
+          const allyNear = Object.values(bot.entities).some(e2 =>
+            e2 && e2.type === 'player' && e2.username && e2.username !== bot.username &&
+            e2.position && e2.position.distanceTo(bot.entity.position) <= 10)
+          if (!allyNear) {
+            this.fleeFrom(bot, t.e.position, `OUTNUMBERED ${pack} — fighting withdrawal, not a duel`)
+            return
+          }
+          if (!this._lastHoldEmit || Date.now() - this._lastHoldEmit > 10000) {
+            this._lastHoldEmit = Date.now()
+            emitEvent('combat', `outnumbered ${pack} but an ally stands within 10 — HOLDING the line`)
+          }
         }
         const d = t.e.position.distanceTo(bot.entity.position)
         if (d > 3.2) {
@@ -1829,6 +1876,7 @@ app.get('/state', (req, res) => {
     pos: round(e.position),
     yaw: +(bot.entity.yaw).toFixed(2), pitch: +(bot.entity.pitch).toFixed(2),
     health: bot.health, food: bot.food, oxygen: bot.oxygenLevel,
+    xpLevel: bot.experience.level,   // enchanting currency — the table's offers cost levels
     ...(() => { const w = waterState(bot); return w ? { inWater: w.inWater, submerged: w.submerged, inCurrent: w.current, buried: w.buried } : {} })(),
     onGround: e.onGround, dimension: bot.game.dimension, gameMode: bot.game.gameMode,
     timeOfDay: bot.time.timeOfDay,
@@ -2278,7 +2326,7 @@ app.get('/mine', async (req, res) => {
     for (let i = 0; i < count; i++) {
       const b = nearestVisible(ids, radius)
       if (!b) break
-      await bot.collectBlock.collect(b)
+      await collectSafely(b)
       mined++
     }
     const have = bot.inventory.items().filter(it => it.name.includes(name) || name.includes(it.name))
@@ -2355,7 +2403,7 @@ app.get('/craft', async (req, res) => {
 
     let reclaimedTable = false
     if (placedTable) {   // put our temporary table back in the bag — leave no litter
-      try { const tb = bot.blockAt(placedTable); if (tb && tb.name === 'crafting_table') { await bot.collectBlock.collect(tb); reclaimedTable = true } } catch (e) {}
+      try { const tb = bot.blockAt(placedTable); if (tb && tb.name === 'crafting_table') { await collectSafely(tb); reclaimedTable = true } } catch (e) {}
     }
 
     const nowHave = bot.inventory.items().filter(it => it.name === item.name).reduce((s, it) => s + it.count, 0)
@@ -2464,7 +2512,7 @@ app.get('/tidy', async (req, res) => {
     for (const p of todo) {
       const b = bot.blockAt(new Vec3(p.x, p.y, p.z))
       if (!b || !scaffold.has(b.name)) { alreadyGone++; continue }  // already gone / not scaffold
-      try { await bot.collectBlock.collect(b); reclaimed++ }
+      try { await collectSafely(b); reclaimed++ }
       catch (e) { failed++; navPlaced.push(p) }                     // unreachable now — requeue
     }
     ok(res, { reclaimed, alreadyGone, failed, remaining: navPlaced.length })
@@ -3826,7 +3874,7 @@ app.get('/boot', (req, res) => {
       (jl.length ? `RUNNING JOBS: ${jl.map(j => j.id + ':' + j.name).join(', ')}. ` : 'No jobs running. ') +
       `Chat cursor: ${chatSeq} (write this to heartbeat_cursor.txt).`
     ok(res, {
-      summary, pos: round(pos), health: bot.health, food: bot.food, held, armor,
+      summary, pos: round(pos), health: bot.health, food: bot.food, xpLevel: bot.experience.level, held, armor,
       sky: oh, chatSeq, seenCells: SEEN.size,
       waypoints: Object.keys(waypoints.list()), runningJobs: jl.map(j => ({ id: j.id, name: j.name })),
       reflexes: reflexes.map(r => ({ name: r.name, on: r.on }))
@@ -3904,7 +3952,7 @@ app.get('/gather', (req, res) => {
             continue
           }
           try {
-            await bot.collectBlock.collect(b)
+            await collectSafely(b)
             mined++
             progressed = true
             job.progress(`mined ${resource} ${mined}/${amount} @ ${p.x},${p.y},${p.z}`)
@@ -4309,6 +4357,78 @@ app.get('/safe_goto', async (req, res) => {
   } catch (e) { err(res, e) }
 })
 
+// GET /enchant?item=&slot= : walk to the nearest enchanting table and enchant. The pilot's
+// query→act→verify grammar in one verb: WITHOUT slot it puts the item + lapis in, reads the
+// three offers (level cost, lapis cost, enchant name when resolvable), takes everything back
+// out, and reports — the LOOK. WITH slot=0|1|2 it commits that offer (consumes 1-3 lapis and
+// 1-3 of MY levels; needs my level ≥ the shown cost). Lapis must be in my pockets — the table
+// window keeps nothing between opens. (Forged 07-20, the day the body learned to enchant.)
+app.get('/enchant', async (req, res) => {
+  try {
+    if (!ready) return err(res, new Error('not ready'))
+    const itemName = req.query.item
+    const slot = req.query.slot === undefined ? null : parseInt(req.query.slot)
+    if (!itemName) return err(res, new Error('item required'))
+    const tb = bot.findBlock({ matching: resolveBlockIds('enchanting_table'), maxDistance: 16 })
+    if (!tb) return err(res, new Error('no enchanting table within 16'))
+    await bot.pathfinder.goto(new goals.GoalNear(tb.position.x, tb.position.y, tb.position.z, 2))
+    const item = bot.inventory.items().find(i => i.name === itemName)
+    if (!item) return err(res, new Error(`no ${itemName} in pockets`))
+    const lapis = bot.inventory.items().find(i => i.name === 'lapis_lazuli')
+    if (!lapis) return err(res, new Error('no lapis_lazuli in pockets — the table burns 1-3 per enchant'))
+    const table = await bot.openEnchantmentTable(tb)
+    const propTap = (p) => console.log(`[enchant] prop packet: windowId=${p.windowId} property=${p.property} value=${p.value}`)
+    bot._client.on('craft_progress_bar', propTap)
+    try {
+      // find both WITHIN the open window — slot ids remap once a window opens, so the
+      // bot.inventory handles located above would point moveSlotItem at the wrong cells
+      const wItem = table.slots.find(s => s && s.name === itemName && s.slot >= 2)
+      const wLapis = table.slots.find(s => s && s.name === 'lapis_lazuli' && s.slot >= 2)
+      if (!wItem) throw new Error(`${itemName} not visible in the table window`)
+      if (!wLapis) throw new Error('lapis not visible in the table window')
+      await table.putTargetItem(wItem)
+      await table.putLapis(wLapis)
+      // 1.21 quirk: the plugin's 'ready' event NEVER fires (it compares "expected" property
+      // packets against "actual" ones modern servers no longer send) — poll the offers array
+      // directly instead; the data itself arrives fine.
+      const offersUp = () => (table.enchantments || []).some(e => e.level > 0)
+      const offerDeadline = Date.now() + 6000
+      while (!offersUp() && Date.now() < offerDeadline) await new Promise(r => setTimeout(r, 250))
+      if (!offersUp()) {
+        console.log(`[enchant] TIMEOUT diag: slot0=${JSON.stringify(table.slots[0] && table.slots[0].name)} slot1=${JSON.stringify(table.slots[1] && table.slots[1].name)} enchs=${JSON.stringify(table.enchantments)}`)
+        throw new Error('offers never arrived — see [enchant] diag in log')
+      }
+      const enchName = (id) => {
+        const e = (mcData.enchantmentsArray || []).find(x => x.id === id)
+        return e ? e.name : (id === -1 ? '?' : `#${id}`)
+      }
+      const offers = (table.enchantments || []).map((e, i) => (
+        { slot: i, levelCost: e.level, lapisCost: i + 1, enchant: enchName(e.expected ? e.expected.enchant : -1) }))
+      const myLevel = bot.experience.level
+      if (slot === null) {
+        emitEvent('enchant', `offers for ${itemName}: ${offers.map(o => `#${o.slot} lv${o.levelCost} ${o.enchant}`).join(' | ')} (me: lv${myLevel})`)
+        ok(res, { offers, myLevel, lapisHeld: lapis.count, note: 'call again with slot=0|1|2 to commit' })
+      } else {
+        const chosen = offers[slot]
+        if (!chosen || chosen.levelCost < 0) throw new Error(`slot ${slot} holds no offer`)
+        if (myLevel < chosen.levelCost) throw new Error(`offer needs level ${chosen.levelCost}, I am ${myLevel}`)
+        if (lapis.count < chosen.lapisCost) throw new Error(`offer needs ${chosen.lapisCost} lapis, I hold ${lapis.count}`)
+        // commit with a direct packet — table.enchant() awaits the same dead 'ready' event
+        bot._client.write('enchant_item', { windowId: table.id, enchantment: slot })
+        await new Promise(r => setTimeout(r, 1000))   // let the server apply + resync slot 0
+        const result = table.slots[0]
+        emitEvent('enchant', `${itemName} enchanted: ${chosen.enchant} (slot ${slot}, lv${chosen.levelCost}) — now lv${bot.experience.level}`)
+        ok(res, { enchanted: itemName, offer: chosen, myLevelNow: bot.experience.level, resultNbt: !!(result && result.nbt) })
+      }
+    } finally {
+      try { bot._client.removeListener('craft_progress_bar', propTap) } catch (e) {}
+      try { if (table.targetItem()) await table.takeTargetItem() } catch (e) {}
+      try { const l = table.slots[1]; if (l) await bot.putAway(l.slot) } catch (e) {}
+      try { table.close() } catch (e) {}
+    }
+  } catch (e) { err(res, e) }
+})
+
 // GET /smelt?item=&fuel=&count= : walk to the nearest furnace, load fuel + input, wait for
 // the smelt to finish (polls the output slot, bounded), collect the result. 1 coal smelts 8.
 app.get('/smelt', async (req, res) => {
@@ -4322,14 +4442,32 @@ app.get('/smelt', async (req, res) => {
     if (!fb) return err(res, new Error('no furnace within 8'))
     await bot.pathfinder.goto(new goals.GoalNear(fb.position.x, fb.position.y, fb.position.z, 2))
     const furnace = await bot.openFurnace(fb)
+    // 07-20 diagnostic: "destination full" on a furnace the helmsman verified EMPTY (1.21.11 window
+    // desync suspect) — dump what the client thinks the furnace slots hold before touching them.
+    console.log(`[smelt] window type=${furnace.type} invStart=${furnace.inventoryStart} slots0-2=` +
+      JSON.stringify((furnace.slots || []).slice(0, 3).map(s => s && { name: s.name, count: s.count })))
     try {
       const inItem = bot.inventory.items().find(i => i.name === inputName)
       const fuelItem = bot.inventory.items().find(i => i.name === fuelName)
       if (!inItem) throw new Error(`no ${inputName} to smelt`)
-      if (!fuelItem) throw new Error(`no ${fuelName} for fuel`)
       const smeltCount = Math.min(want, inItem.count)
-      const fuelNeeded = Math.min(fuelItem.count, Math.max(1, Math.ceil(smeltCount / 8)))
-      await furnace.putFuel(fuelItem.type, null, fuelNeeded)
+      // 07-20: furnaces aren't always empty (the home bank held a charcoal hoard in the fuel slot
+      // and putFuel died with "destination full") — drain the output, evict a mismatched input,
+      // and reuse whatever fuel is already sitting in the slot instead of failing.
+      if (furnace.outputItem()) {
+        const t = await furnace.takeOutput()
+        if (t) emitEvent('smelt', `cleared leftover output: ${t.count} ${t.name}`)
+      }
+      const curIn = furnace.inputItem()
+      if (curIn && curIn.name !== inputName) await furnace.takeInput()
+      if (!furnace.fuelItem()) {
+        if (!fuelItem) throw new Error(`no ${fuelName} for fuel`)
+        // items-per-fuel: coal-family burns 8, wood-family 1.5 — the old flat /8 starved
+        // plank-fueled burns (2 planks for 9 logs = 3 smelted, silent stall)
+        const per = /coal/.test(fuelName) ? 8 : /planks|log|_wood|bamboo|stick/.test(fuelName) ? 1.5 : 8
+        const fuelNeeded = Math.min(fuelItem.count, Math.max(1, Math.ceil(smeltCount / per)))
+        await furnace.putFuel(fuelItem.type, null, fuelNeeded)
+      }
       await furnace.putInput(inItem.type, null, smeltCount)
       // wait for the output to accumulate (each item ~10s), bounded
       const deadline = Date.now() + smeltCount * 12000 + 15000

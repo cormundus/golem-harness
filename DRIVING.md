@@ -124,7 +124,8 @@ The long-form companion — worked examples, techniques, and the field stories b
 | `/chest`     | —                                   | Open + list the nearest chest (within 12). |
 | `/withdraw`  | `name count`                        | Take items from the nearest chest (name is substring). |
 | `/deposit`   | `name count`                        | Put items into the nearest chest (name is substring — mind what else matches). |
-| `/smelt`     | `item fuel count`                   | Walk to nearest furnace, load, wait out the burn, collect. Blocking. |
+| `/smelt`     | `item fuel count`                   | Walk to nearest furnace, load, wait out the burn, collect. Blocking. Reuses fuel already in the slot; clears leftover output into pockets. |
+| `/enchant`   | `item slot`                         | Nearest enchanting table. No `slot` → report the 3 offers (level/lapis cost, enchant) — the LOOK. `slot=0\|1\|2` → commit. Lapis must be in pockets; costs MY levels (see `xpLevel` in /state). |
 | `/chat`      | `msg`                               | Say something in chat (URL-encode; ASCII only). |
 | `/activate`  | `x y z`                             | Right-click a block (LOS-gated): beds, levers, buttons. Walks into reach. |
 | `/use`       | `x y z item raw`                    | Universal right-click-with-item: till, sow, bucket fill/pour (liquids auto-raw). |
