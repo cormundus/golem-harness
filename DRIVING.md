@@ -79,6 +79,11 @@ The long-form companion — worked examples, techniques, and the field stories b
     names, kites what it cannot afford to trade with (creepers always; heavy hitters like
     vindicators — one of those does ~8+ through iron), and disengages on a tripwire scaled to the
     last hit taken. Arrive reading the narration; override with `/stop`, `/shoot`, `/strike`.
+    Two disciplines learned indoors (the mansion, 07-21): **perception may flow through the floor,
+    urgency must flow through the path** — enemies a storey away with no eye-line are `watched:`
+    (narrated, never driving the legs or the pack count); and **the legs get one owner** — your
+    movement verbs hold a soft lane the reflex's discretionary moves defer to, `/brace` holds a
+    hard one that only survival overrides. Mid-fight, follow yields to combat entirely.
 20. Doctrine: bow beyond ~6 (`/shoot`), sword to finish (`/strike`), creepers are FLED never
     fought, **players are never weapons targets.** With a human teammate, agree fire lanes *before*
     the cave: they melee, you hold ranged, never loose through their line, creeper = both run.
@@ -142,6 +147,7 @@ The long-form companion — worked examples, techniques, and the field stories b
 | `/strike`    | `name item`                         | ⚔️ One deliberate charged melee swing. Approaches. Refuses players + creeper-melee. |
 | `/shoot`     | `name`                              | ⚔️ Bow: full charge, loose. No approach, LOS ≤25. Refuses players; creepers allowed. |
 | `/guard`     | `on`                                | ⚔️ Raise/lower the offhand shield (manual posture; the reflex manages it in fights). |
+| `/brace`     | `sec`                               | ⚔️ Pilot-hold (cap 30s): legs answer no reflex but true survival (creeper fuse, HP-critical, drowning). For deliberate moments; `/stop` releases early. |
 | `/gesture`   | `name at`                           | nod / shake / wave / point?at=x,y,z — nonverbal co-op presence. |
 | `/climb`     | —                                   | Mount and ascend a nearby ladder to its top. |
 | `/where`     | `name`                              | Player locator: live position or last-seen breadcrumb + bearing. |

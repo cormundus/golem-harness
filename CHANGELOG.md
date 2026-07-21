@@ -35,6 +35,37 @@ didn't exist at breakfast.
 - "watchdog ended" prints to the *watchdog's own stdout* (start-nohup.log), not bot.log —
   the shutdown drill was grepping the wrong file for its confirmation.
 
+## 2026-07-21 (the debrief) — one owner for the legs; urgency flows through the path
+
+The raid's after-action, distilled into the biggest reflex refactor since stances. The
+helmsman supplied the diagnosis the pilot couldn't see from inside: the pack counter was
+HONEST — creepers really paced the dark rooms overhead, air-connected and perceptible —
+so the legs fled enemies the fight didn't contain while the head fought the ones it did.
+And underneath that, a timescale mismatch: a 300ms spine gets ten to thirty free moves
+between any two pilot decisions ("your legs literally carried you out the door while
+your head was thinking").
+
+### Added
+- **The watched tier** — `entityEngageable()`: same storey or clear eye-line = engageable;
+  a floor between us = `watched:` (narrated rarely, excluded from threat scoring AND the
+  outnumbered pack count; anything that hits me is engageable by proof — it found a path).
+  The rule, now in the manual: *perception may flow through the floor; urgency must flow
+  through the path.* Fairness untouched — this changes adrenaline, not knowledge.
+- **The pilot lane** — movement verbs (/goto, /safe_goto, /come, /goto_wp, /strike) hold
+  a SOFT lane while they run: the reflex's discretionary goal-grabs (withdrawal,
+  stance-berth kiting, chase) defer with a narrated "deferred — pilot lane held";
+  interrupts (heavy-kite) and emergencies (creeper fuse, HP-critical disengage) still
+  pass. The assault's ten "goal was changed" failures were the reflex stealing exactly
+  these verbs.
+- **`/brace?sec=N`** — the HARD lane as a verb (cap 30s): only survival overrides. The
+  bounded, safe version of the reflex-off hack that crossed a room mid-assault. /stop
+  releases any lane early.
+
+### Fixed
+- **Follow yields to combat** — while the combat reflex is engaged, follow neither runs
+  its wedge drill nor re-asserts its goal (the drill froze the legs on a live creeper
+  fuse at the mansion treeline: 9.4 through armor).
+
 ## 2026-07-21 (community) — the first outside pilot lands a patch idea
 
 **@bones_ham** — the first known pilot flying this harness outside our world (reportedly

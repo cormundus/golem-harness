@@ -1550,6 +1550,42 @@ bot.once('spawn', () => {
     console.log('[bot] damage attribution wired')
   } catch (e) { console.log('[bot] damage attribution wire failed: ' + e.message) }
 })
+// ---- PILOT LANE (07-21, the debrief's cut: "your legs literally carried you out the door
+// while your head was thinking" — the helmsman, having watched exactly that). The spine acts
+// every 300ms; the pilot every 1-3s — ten to thirty free reflex moves between any two pilot
+// decisions, so orders kept landing on a body that had already left. Movement verbs claim a
+// SOFT lane: discretionary reflex goals (withdrawal, stance-berth kiting, chase) defer, but
+// interrupts (heavy-kite) and emergencies (creeper fuse, HP-critical) still pass. /brace
+// claims the HARD lane: only emergencies pass. The legs get ONE owner, and the pilot knows which.
+const pilotLane = { until: 0, why: null, hard: false, narrated: 0 }
+const claimLane = (why, ms, hard = false) => { pilotLane.until = Date.now() + ms; pilotLane.why = why; pilotLane.hard = hard }
+const releaseLane = () => { pilotLane.until = 0; pilotLane.hard = false }
+const laneBlocks = (klass) => {              // klass: 'discretionary' | 'interrupt' | 'emergency'
+  if (Date.now() >= pilotLane.until) return false
+  if (klass === 'emergency') return false
+  if (klass === 'interrupt') return pilotLane.hard
+  return true
+}
+const laneNarrate = (what) => {
+  if (Date.now() - pilotLane.narrated < 6000) return
+  pilotLane.narrated = Date.now()
+  emitEvent('combat', `${what} deferred — pilot lane held (${pilotLane.why})`)
+}
+// ---- ENGAGEABLE vs WATCHED (07-21, the mansion debrief, Adam's diagnosis: creepers pacing
+// dark rooms OVERHEAD were air-connected and honestly perceptible, so the pack counter armed
+// withdrawals against enemies the fight didn't contain — "legs fleeing the ceiling while the
+// head fought the door." The rule: perception may flow through the floor; URGENCY must flow
+// through the path. Same storey = engageable; separated vertically with no eye-line = watched
+// (narrated, never driving). Anything that HITS me is engageable by proof — it found a path.)
+function entityEngageable (en) {
+  try {
+    if (AGGRO_CONFIRMED.has(en.id)) return true
+    const dy = Math.abs(en.position.y - bot.entity.position.y)
+    if (dy < 2.5) return true
+    return losClear(bot.entity.position.offset(0, 1.62, 0), en.position.offset(0, 1.0, 0))
+  } catch (e) { return true }
+}
+
 // the watcher+responder reflex — priority ABOVE unstuck (unshift), toggle via /reflexes name=combat
 reflexes.unshift({
   name: 'combat', on: true, active: false,
@@ -1559,8 +1595,11 @@ reflexes.unshift({
   // 300ms re-entry safeStop'd the previous flee goal and re-planned from scratch, so the body
   // SHUFFLED IN PLACE while a same-speed drowned ate it 1.4 at a time. A flee is set ONCE, held
   // 6s, and RUN at a sprint; re-entries bounce off the latch instead of resetting the goal.)
-  fleeFrom (bot, threatPos, why) {
+  fleeFrom (bot, threatPos, why, klass = 'discretionary') {
     const now = Date.now()
+    // PILOT LANE (07-21): discretionary flees defer to a held lane; interrupts pass the
+    // soft lane only; emergencies (creeper fuse, HP-critical) always own the legs.
+    if (laneBlocks(klass)) { laneNarrate(why || 'flee'); return }
     if (now < this._fleeUntil) return                    // a flee is already running — let it run
     this._fleeUntil = now + 6000
     try {
@@ -1616,6 +1655,16 @@ reflexes.unshift({
         // else must share my connected air. History is kept, not wiped — brief occlusion mid-chase
         // shouldn't amnesia the pursuit evidence, the sample just doesn't accrue while unseen.
         if (!confirmed && !entityPerceptible(e, this.fairFill(bot))) continue
+        // WATCHED tier (the mansion lesson): perceptible but a floor away — narrate rarely, never score
+        if (!entityEngageable(e)) {
+          const wk = 'w' + e.id
+          if (cls !== 'player' && now - (this._lastNarrate.get(wk) || 0) > 20000) {
+            this._lastNarrate.set(wk, now)
+            const rel = e.position.y > here.y + 1 ? 'above' : (e.position.y < here.y - 1 ? 'below' : 'beyond')
+            emitEvent('threat', `watched: ${e.name || '?'} ${rel} ~${Math.round(dist)} — separated, not driving`)
+          }
+          continue
+        }
         const h = this._hist.get(e.id) || { d: dist, t: now, closes: 0, logT: 0 }
         const dt = (now - h.t) / 1000
         if (dt >= 0.25) {
@@ -1659,13 +1708,16 @@ reflexes.unshift({
     if (t.cls === 'creeper' || t.cls === 'heavy') {
       // Never trade with these — but "never melee" stopped meaning "only run" when stances landed:
       // beyond the stance's berth and inside the bow band, the answer is an arrow, not distance.
-      if (t.dist <= s.fleeDist) { this.fleeFrom(bot, t.e.position, null); return }
+      // Lane classes: a creeper in berth is an EMERGENCY (fuses don't negotiate); a heavy's kite
+      // is an INTERRUPT (passes the soft lane, defers to /brace's hard one).
+      const fk = t.cls === 'creeper' ? 'emergency' : 'interrupt'
+      if (t.dist <= s.fleeDist) { this.fleeFrom(bot, t.e.position, null, fk); return }
       const [lo, hi] = s.bowBand
       const bandLo = t.cls === 'heavy' ? Math.max(lo, 10) : lo   // heavies close FAST — bigger floor
       if (t.dist >= bandLo && t.dist <= hi) {
         try { if (await drawAndLoose(t.e)) return } catch (e) {}
       }
-      this.fleeFrom(bot, t.e.position, null)
+      this.fleeFrom(bot, t.e.position, null, fk)
       return
     }
     // melee hostile: SHIELD POSTURE while it closes (the shield is a posture, not a parry —
@@ -1689,7 +1741,7 @@ reflexes.unshift({
         // one). Floor drops to 5 there; every other stance and class keeps the old 8.
         const disengageFloor = (stance === 'vanguard' && t.cls === 'hostile') ? 5 : 8
         if (bot.health < Math.max(disengageFloor, hitRef * 2.5)) {
-          this.fleeFrom(bot, t.e.position, `HP ${Math.round(bot.health * 10) / 10} — disengaging from ${label}, sprinting`)
+          this.fleeFrom(bot, t.e.position, `HP ${Math.round(bot.health * 10) / 10} — disengaging from ${label}, sprinting`, 'emergency')
           return
         }
         // OUTNUMBERED (07-18, death #4 autopsy + the helmsman's diagnosis: the close-in never
@@ -1701,7 +1753,8 @@ reflexes.unshift({
           const c2 = mobClass(e2)
           if (c2 !== 'hostile' && c2 !== 'creeper' && c2 !== 'heavy') return false
           if (e2.position.distanceTo(bot.entity.position) >= 16) return false
-          return AGGRO_CONFIRMED.has(e2.id) || entityPerceptible(e2, fill)
+          if (!(AGGRO_CONFIRMED.has(e2.id) || entityPerceptible(e2, fill))) return false
+          return entityEngageable(e2)   // the mansion lesson: the pack counts only what can reach me
         })
         const pack = packList.length
         if (pack >= 3) {
@@ -1743,6 +1796,7 @@ reflexes.unshift({
             try { if (await drawAndLoose(t.e)) { await new Promise(r => setTimeout(r, 200)); continue } } catch (e) {}
           }
           if (s.chase) {                                      // vanguard: run it down
+            if (laneBlocks('discretionary')) { laneNarrate('chase'); await new Promise(r => setTimeout(r, 500)); continue }
             try { bot.pathfinder.setGoal(new goals.GoalNear(t.e.position.x, t.e.position.y, t.e.position.z, 2)) } catch (e) {}
             await new Promise(r => setTimeout(r, 500))
             continue
@@ -2208,6 +2262,7 @@ app.get('/strike', async (req, res) => {
     if (/creeper/.test(String(target.name))) {
       return err(res, new Error('refusing: never melee a creeper — flee is the law'))
     }
+    claimLane('strike', 15000)                     // soft lane: the approach + swing are MINE (07-21)
     if (target.position.distanceTo(here) > 3) {
       await bot.pathfinder.goto(new goals.GoalNear(target.position.x, target.position.y, target.position.z, 2))
     }
@@ -2230,7 +2285,7 @@ app.get('/strike', async (req, res) => {
       try { await bot.pathfinder.goto(new goals.GoalNear(spot.x, spot.y, spot.z, 1)) } catch (e) {}  // hoover the drops
     }
     ok(res, { struck: ename, with: iname, at: round(spot), killed: dead, note: dead ? 'walked to drops' : 'still standing — swing again deliberately' })
-  } catch (e) { err(res, e) }
+  } catch (e) { err(res, e) } finally { releaseLane() }
 })
 
 // ---- /shoot (07-15, built the day the helmsman handed me a bow): the ranged verb — draw, hold a full
@@ -2416,10 +2471,11 @@ app.get('/goto', async (req, res) => {
     const x = parseFloat(req.query.x), y = parseFloat(req.query.y), z = parseFloat(req.query.z)
     if (![x, y, z].every(Number.isFinite)) return err(res, new Error('x, y, z required'))
     const range = parseInt(req.query.range || '1')
+    claimLane('goto', 60000)                       // soft lane: my legs, my walk (07-21)
     const r = await stagedGoto(new Vec3(x, y, z), range)
     if (!r.arrived) { safeStop(); try { bot.clearControlStates() } catch (e) {} }  // leave a clean stop so the bot doesn't drift on a give-up
     ok(res, { arrived: r.arrived, method: r.method || null, reason: r.reason || null, hint: r.hint || null, pos: round(bot.entity.position) })
-  } catch (e) { err(res, e) }
+  } catch (e) { err(res, e) } finally { releaseLane() }
 })
 
 app.get('/come', async (req, res) => {
@@ -2429,7 +2485,8 @@ app.get('/come', async (req, res) => {
     // PLAYERS first (07-14): "/come?name=<player>" used to fail — this verb only ever
     // knew blocks. Live entity if tracked, else the last-seen breadcrumb from /where.
     const who = req.query.name && bot.players && bot.players[req.query.name]
-    if (who || playerCrumbs[req.query.name]) {
+    claimLane('come', 60000)                       // soft lane (07-21): the assault's "goal was
+    if (who || playerCrumbs[req.query.name]) {     // changed" x10 was the reflex stealing THIS verb
       const target = (who && who.entity && who.entity.position) || (playerCrumbs[req.query.name] && playerCrumbs[req.query.name].pos)
       if (!target) return err(res, new Error(`${req.query.name} is online but never seen — no position to walk to`))
       await bot.pathfinder.goto(new goals.GoalNear(target.x, target.y, target.z, range))
@@ -2440,7 +2497,7 @@ app.get('/come', async (req, res) => {
     if (!b) return err(res, new Error(`no visible ${req.query.name} found`))
     await bot.pathfinder.goto(new goals.GoalNear(b.position.x, b.position.y, b.position.z, range))
     ok(res, { reached: round(b.position), pos: round(bot.entity.position) })
-  } catch (e) { err(res, e) }
+  } catch (e) { err(res, e) } finally { releaseLane() }
 })
 
 app.get('/mine', async (req, res) => {
@@ -2637,7 +2694,21 @@ app.get('/chatlog', (req, res) => {
   const since = parseInt(req.query.since || '0')
   ok(res, { cursor: chatSeq, messages: chatLog.filter(m => m.id > since) })
 })
-app.get('/stop', (req, res) => { try { stopFollow() } catch {} ; safeStop(); try { bot.clearControlStates() } catch {} ; const jobsCancelled = jobs.stopAll(); ok(res, { stopped: true, jobsCancelled }) })
+app.get('/stop', (req, res) => { try { stopFollow() } catch {} ; safeStop(); try { bot.clearControlStates() } catch {} ; releaseLane(); const jobsCancelled = jobs.stopAll(); ok(res, { stopped: true, jobsCancelled }) })
+
+// GET /brace?sec=N : the PILOT-HOLD (07-21 debrief — the bounded version of switching the
+// combat reflex off to cross a room). For N seconds (cap 30) the legs answer no discretionary
+// reflex and no interrupt either: only true survival (creeper fuse, HP-critical disengage,
+// drowning) may move the body. Use it for deliberate moments — a careful shot, a ceremony,
+// standing ground beside a partner — then let it lapse. An armed brace is a debt like any mode.
+app.get('/brace', (req, res) => {
+  try {
+    const sec = Math.min(30, Math.max(1, parseInt(req.query.sec || '8')))
+    claimLane('brace', sec * 1000, true)
+    emitEvent('brace', `braced ${sec}s — legs answer the pilot; survival reflexes only may override`)
+    ok(res, { braced: sec, hardLane: true, note: 'release early with /stop' })
+  } catch (e) { err(res, e) }
+})
 // GET /tidy — reclaim scaffolding the pathfinder left behind. Mines back every still-standing
 // scaffold block the bot placed while navigating (tracked in navPlaced), collecting the material,
 // leaving the world as it found it. ?dry=1 reports the pending count without mining.
@@ -2684,6 +2755,11 @@ app.get('/follow', (req, res) => {
     const st = { name, range, lastPos: bot.entity.position.clone(), lastT: Date.now(), drilling: false, lostT: 0, warnT: 0 }
     st.timer = setInterval(async () => {
       if (followState !== st || st.drilling) return
+      // FOLLOW YIELDS TO COMBAT (07-21: the wedge drill held the legs still on a live creeper
+      // fuse, 9.4 through armor). While the combat reflex is engaged, follow neither drills
+      // nor re-asserts its goal — one owner for the legs, and mid-fight it isn't follow.
+      const cr = reflexes.find(r => r.name === 'combat')
+      if (cr && cr.active) { st.lastPos = bot.entity.position.clone(); st.lastT = Date.now(); return }
       try {
         const ent = bot.players[st.name] && bot.players[st.name].entity
         if (!ent) {                                    // target untracked (out of range / relogged)
@@ -3375,6 +3451,7 @@ app.get('/goto_wp', async (req, res) => {
     if (!wp) return err(res, new Error('unknown waypoint: ' + name))
     const range = parseInt(req.query.range || '1')
     const Vec3v = require('vec3').Vec3
+    claimLane('goto_wp', 120000)                   // soft lane: my legs, my walk (07-21)
     const r = await stagedGoto(new Vec3v(wp.x, wp.y, wp.z), range)   // full staged-goto smarts (07-12)
     if (!r.arrived) {
       safeStop(); try { bot.clearControlStates() } catch (e) {}
@@ -3384,7 +3461,7 @@ app.get('/goto_wp', async (req, res) => {
     lastWaypoint = name
     journal('goto_wp', 'went to ' + name)
     return ok(res, { arrived: name, method: r.method || null, target: wp, pos: round(bot.entity.position) })
-  } catch (e) { err(res, e) }
+  } catch (e) { err(res, e) } finally { releaseLane() }
 })
 
 // GET /journal?n= -> return the last ~30 (or n) journal lines
@@ -4575,6 +4652,7 @@ app.get('/safe_goto', async (req, res) => {
     const dest = new Vec3(x, y, z)
     const verbose = req.query.verbose === '1'
     const segLen = 24
+    claimLane('safe_goto', 300000)                 // soft lane, long trek duration (07-21)
     const isTimeout = (e) => /took too long|timeout|timed out/i.test(e.message || '')
 
     // first: a single direct attempt
@@ -4620,7 +4698,7 @@ app.get('/safe_goto', async (req, res) => {
     ok(res, verbose
       ? { arrived, method: 'segmented', pos: round(pos), dist: +pos.distanceTo(dest).toFixed(1), segments: segLog }
       : { arrived, pos: round(pos), segments: segLog.length })
-  } catch (e) { err(res, e) }
+  } catch (e) { err(res, e) } finally { releaseLane() }
 })
 
 // GET /enchant?item=&slot= : walk to the nearest enchanting table and enchant. The pilot's
