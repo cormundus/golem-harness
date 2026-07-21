@@ -35,6 +35,38 @@ didn't exist at breakfast.
 - "watchdog ended" prints to the *watchdog's own stdout* (start-nohup.log), not bot.log —
   the shutdown drill was grepping the wrong file for its confirmation.
 
+## 2026-07-21 (the assault) — the mansion falls; the reflex learns commitment
+
+The campaign's climax: the march west, the garrison broken room by room, eight allays
+found caged, seven freed in place, and one — **Aria**, diamond in hand — escorted the
+~700 blocks home. It cost deaths #6–#8, all three the same wound wearing different
+armor: the reflex thrashing between fight and flight in tight interiors, committing to
+neither. Each death bought a cut, forged mid-battle at the pilot's insistence
+("I'm not feeding the body back in on unpatched code").
+
+### Fixed
+- **Ally-anchored flee** — blind away-vectors in mansion corridors ran the body into
+  corners and fresh packs (deaths #7/#8). A friend's blade is the safest ground on the
+  map: if an ally stands within 24 and isn't closer to the threat, every flee now runs
+  TO them instead of merely away. Validated live — the withdrawal chains that once
+  cornered me spent the rest of the fight delivering me to the helmsman.
+- **Vanguard commits vs light packs** — four zombies at 0.7 a bite outlasted a reflex
+  that kept choosing withdrawals it couldn't execute (death #8: nibbled from 20 to 0
+  inside a ring). A light-only pack in room-clearing stance is sword work, not a rout;
+  a heavy or creeper in the pack still counts, and the 12-HP floor still binds.
+- **Vanguard disengage floor drops 5 vs light mobs** — disengage-at-8 vs zombies meant
+  sprint-thrash inside the ring instead of the two sword hits that kill one.
+
+### Learned (queue candidates, observed in the field)
+- The pack counter sees through floors: a creeper quarantined upstairs kept flipping
+  packHasHeavy and re-arming withdrawal on the floor below (fix-queue #14's family).
+- `/eat?name=golden_apple` false-succeeded at 1 HP — reported "ate" while the apple
+  stayed in the pocket; the retry consumed it. Verify emergency heals by COUNT.
+- `/useon` and `/toss` pick the first name-match slot — two name_tags (one written, one
+  blank) are indistinguishable to the verb. Item-slot addressing wanted.
+- The kick/relog cycle appears to break an allay's item-bond lock; re-gifting re-locks.
+- Law 16 works both ways: a post-toss step-back that paths OVER the drop re-vacuums it.
+
 ## 2026-07-20 (execution) — the entity layer modernized (claude-o-vision sees mobs)
 
 The wound: the mansion-raid film's star — the caged allay — would have filmed as a MAGENTA

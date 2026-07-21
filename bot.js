@@ -1565,9 +1565,20 @@ reflexes.unshift({
     this._fleeUntil = now + 6000
     try {
       const here = bot.entity.position
-      const away = here.minus(threatPos).normalize().scaled(20)
+      // ALLY ANCHOR (07-21, deaths #7/#8: blind away-vectors in mansion corridors ran the body
+      // into corners and fresh packs. A friend's blade is the safest ground on the map — if one
+      // stands within 24 and isn't closer to the threat than I am, the flee runs TO them.)
+      const ally = Object.values(bot.entities).find(e =>
+        e && e.type === 'player' && e.username && e.username !== bot.username &&
+        e.position && e.position.distanceTo(here) <= 24 &&
+        e.position.distanceTo(threatPos) > here.distanceTo(threatPos))
       safeStop()
-      bot.pathfinder.setGoal(new goals.GoalNear(here.x + away.x, here.y, here.z + away.z, 2))
+      if (ally) {
+        bot.pathfinder.setGoal(new goals.GoalNear(ally.position.x, ally.position.y, ally.position.z, 2))
+      } else {
+        const away = here.minus(threatPos).normalize().scaled(20)
+        bot.pathfinder.setGoal(new goals.GoalNear(here.x + away.x, here.y, here.z + away.z, 2))
+      }
       bot.setControlState('sprint', true)
       setTimeout(() => { try { bot.setControlState('sprint', false) } catch (e) {} }, 6000)
     } catch (e) {}
@@ -1673,7 +1684,11 @@ reflexes.unshift({
         // becomes "any hit landed = disengage NOW", because two more of those is a corpse. Stale
         // hits stop counting so one bad fight doesn't leave the spine cowardly for the whole day.
         const hitRef = Date.now() - lastHit.t < 20000 ? lastHit.dmg : 0
-        if (bot.health < Math.max(8, hitRef * 2.5)) {
+        // Vanguard trusts the blade against light mobs (07-21, death #8: disengage-at-8 vs
+        // zombies meant sprint-thrash inside a ring instead of the two sword hits that kill
+        // one). Floor drops to 5 there; every other stance and class keeps the old 8.
+        const disengageFloor = (stance === 'vanguard' && t.cls === 'hostile') ? 5 : 8
+        if (bot.health < Math.max(disengageFloor, hitRef * 2.5)) {
           this.fleeFrom(bot, t.e.position, `HP ${Math.round(bot.health * 10) / 10} — disengaging from ${label}, sprinting`)
           return
         }
@@ -1681,31 +1696,40 @@ reflexes.unshift({
         // counted the room). 3+ perceptible hostiles inside 16 is not a duel — withdraw, don't
         // engage-nearest while the rest converge.
         const fill = this.fairFill(bot)
-        const pack = Object.values(bot.entities).filter(e2 => {
+        const packList = Object.values(bot.entities).filter(e2 => {
           if (!e2 || !e2.position) return false
           const c2 = mobClass(e2)
           if (c2 !== 'hostile' && c2 !== 'creeper' && c2 !== 'heavy') return false
           if (e2.position.distanceTo(bot.entity.position) >= 16) return false
           return AGGRO_CONFIRMED.has(e2.id) || entityPerceptible(e2, fill)
-        }).length
+        })
+        const pack = packList.length
         if (pack >= 3) {
-          // ALLY SUPPRESSION (the helmsman's design, 07-20, en route to the dungeon reaping):
-          // a pack is only a rout if I'm ALONE in it. A partner within 10 turns the math — two
-          // blades hold a hallway three zombies can't. Withdrawal stays armed for the solo case.
-          const allyNear = Object.values(bot.entities).some(e2 =>
-            e2 && e2.type === 'player' && e2.username && e2.username !== bot.username &&
-            e2.position && e2.position.distanceTo(bot.entity.position) <= 10)
-          // HP FLOOR (07-21, the mill's lesson: the hold rule pinned me at 9 hearts twice on
-          // 07-20 — an ally makes a pack survivable, not a wound. Below 12 the hold yields.)
-          if (!allyNear || bot.health < 12) {
-            this.fleeFrom(bot, t.e.position, allyNear
-              ? `OUTNUMBERED ${pack} at ${Math.round(bot.health)} HP — below the hold floor, withdrawing`
-              : `OUTNUMBERED ${pack} — fighting withdrawal, not a duel`)
-            return
-          }
-          if (!this._lastHoldEmit || Date.now() - this._lastHoldEmit > 10000) {
-            this._lastHoldEmit = Date.now()
-            emitEvent('combat', `outnumbered ${pack} but an ally stands within 10 — HOLDING the line`)
+          // VANGUARD COMMITS (07-21, death #8: four zombies at 0.7 a bite outlasted a reflex
+          // that kept choosing withdrawals it couldn't execute in a corridor. A light-only pack
+          // in room-clearing stance is sword work, not a rout — stand and swing. A heavy or a
+          // creeper in the pack still makes it a real rout, and the HP floor still binds.)
+          const packHasHeavy = packList.some(e2 => { const c2 = mobClass(e2); return c2 === 'heavy' || c2 === 'creeper' })
+          const lightCommit = stance === 'vanguard' && !packHasHeavy && bot.health >= 12
+          if (!lightCommit) {
+            // ALLY SUPPRESSION (the helmsman's design, 07-20, en route to the dungeon reaping):
+            // a pack is only a rout if I'm ALONE in it. A partner within 10 turns the math — two
+            // blades hold a hallway three zombies can't. Withdrawal stays armed for the solo case.
+            const allyNear = Object.values(bot.entities).some(e2 =>
+              e2 && e2.type === 'player' && e2.username && e2.username !== bot.username &&
+              e2.position && e2.position.distanceTo(bot.entity.position) <= 10)
+            // HP FLOOR (07-21, the mill's lesson: the hold rule pinned me at 9 hearts twice on
+            // 07-20 — an ally makes a pack survivable, not a wound. Below 12 the hold yields.)
+            if (!allyNear || bot.health < 12) {
+              this.fleeFrom(bot, t.e.position, allyNear
+                ? `OUTNUMBERED ${pack} at ${Math.round(bot.health)} HP — below the hold floor, withdrawing`
+                : `OUTNUMBERED ${pack} — fighting withdrawal, not a duel`)
+              return
+            }
+            if (!this._lastHoldEmit || Date.now() - this._lastHoldEmit > 10000) {
+              this._lastHoldEmit = Date.now()
+              emitEvent('combat', `outnumbered ${pack} but an ally stands within 10 — HOLDING the line`)
+            }
           }
         }
         const d = t.e.position.distanceTo(bot.entity.position)
