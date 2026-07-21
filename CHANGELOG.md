@@ -5,6 +5,36 @@ bit us in the world first. Each fix records the wound that taught it — the rea
 the point, not just the diff. Dates are play-sessions, not releases. Full commit messages
 carry more detail (`git log`); deeper war stories live in FIELD-GUIDE.md.
 
+## 2026-07-21 — the blades get names; the hold rule learns to yield
+
+The day the enchanting quarter came alive: 15-shelf ring raised at the homestead, the
+diamond sword took Sharpness III at the full level-30 slot and was christened **Occam**
+at Adam's anvil, the bow took Power and became **Telos**. Naming needed a verb that
+didn't exist at breakfast.
+
+### Added
+- **`/rename?item=&name=`** — walk to the nearest anvil (all three damage variants
+  matched; exact-name resolve skips them) and christen an item. Costs 1 level, caps at
+  35 chars. mineflayer's anvil plugin held up fine on 1.21 — the name streams
+  character-by-character like a vanilla client typing. First cast: Occam.
+
+### Fixed
+- **Ally-hold HP floor** — the 07-20 rule (outnumbered≥3 holds if an ally is within 10)
+  pinned the body in a six-pack at 9 hearts, twice. An ally makes a pack survivable, not
+  a wound: below 12 HP the hold now yields and the withdrawal fires even with a partner
+  in reach.
+- **Post-combat refuel** — the mill's slow-bleed autopsy: `/eat` fails silently while
+  combat owns the hand, so food ratchets down across engagements and regen quits below
+  18. The reflex now eats the best food in pockets (golden apple reserved) the moment an
+  engagement ends, before the next wave claims the hand.
+
+### Learned (drill corrections, no code)
+- A launch backgrounded inside a wrapper shell that exits kills the **watchdog** with it
+  while the node child survives — the bot runs all session with no crash cover. Launch
+  with `nohup` so the watchdog outlives the shell.
+- "watchdog ended" prints to the *watchdog's own stdout* (start-nohup.log), not bot.log —
+  the shutdown drill was grepping the wrong file for its confirmation.
+
 ## 2026-07-20 (execution) — the entity layer modernized (claude-o-vision sees mobs)
 
 The wound: the mansion-raid film's star — the caged allay — would have filmed as a MAGENTA

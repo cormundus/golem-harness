@@ -1695,8 +1695,12 @@ reflexes.unshift({
           const allyNear = Object.values(bot.entities).some(e2 =>
             e2 && e2.type === 'player' && e2.username && e2.username !== bot.username &&
             e2.position && e2.position.distanceTo(bot.entity.position) <= 10)
-          if (!allyNear) {
-            this.fleeFrom(bot, t.e.position, `OUTNUMBERED ${pack} — fighting withdrawal, not a duel`)
+          // HP FLOOR (07-21, the mill's lesson: the hold rule pinned me at 9 hearts twice on
+          // 07-20 — an ally makes a pack survivable, not a wound. Below 12 the hold yields.)
+          if (!allyNear || bot.health < 12) {
+            this.fleeFrom(bot, t.e.position, allyNear
+              ? `OUTNUMBERED ${pack} at ${Math.round(bot.health)} HP — below the hold floor, withdrawing`
+              : `OUTNUMBERED ${pack} — fighting withdrawal, not a duel`)
             return
           }
           if (!this._lastHoldEmit || Date.now() - this._lastHoldEmit > 10000) {
@@ -1739,6 +1743,23 @@ reflexes.unshift({
       }
     } finally { guardDown() }                                 // never exit combat with a stuck-raised arm
     if (!bot.entities[t.e.id]) emitEvent('combat', `${label} is DOWN`)
+    // POST-COMBAT REFUEL (07-21, the mill's slow-bleed autopsy: /eat fails silently while
+    // combat owns the hand, so food ratchets down across engagements and regen quits at 17.
+    // The moment the hand is free is the moment to eat — before the next wave claims it.)
+    if (bot.food <= 14) {
+      try {
+        const foods = (mcData && mcData.foods) || {}
+        const bite = bot.inventory.items().filter(i => foods[i.type] && i.name !== 'golden_apple')
+          .sort((a, b) => (foods[b.type].foodPoints || 0) - (foods[a.type].foodPoints || 0))[0]
+        if (bite) {
+          const prevHeld = bot.heldItem
+          await bot.equip(bite, 'hand')
+          await bot.consume()
+          emitEvent('combat', `refueled on ${bite.name} after the fight — food ${bot.food}/20`)
+          if (prevHeld) await bot.equip(prevHeld, 'hand')
+        }
+      } catch (e) {}                                          // a failed snack must never wedge the reflex
+    }
   }
 })
 // LAVA WATCH (07-17, death #3 autopsy: flowing lava advanced into a path that was air at plan
@@ -4568,6 +4589,34 @@ app.get('/enchant', async (req, res) => {
       try { if (table.targetItem()) await table.takeTargetItem() } catch (e) {}
       try { const l = table.slots[1]; if (l) await bot.putAway(l.slot) } catch (e) {}
       try { table.close() } catch (e) {}
+    }
+  } catch (e) { err(res, e) }
+})
+
+// GET /rename?item=&name= : walk to the nearest anvil and christen an item. Costs 1 of MY
+// levels (the anvil's rename fee) and wears the anvil a step; name caps at 35 chars. The
+// mineflayer plugin streams the name a character at a time like a vanilla client typing.
+// (Forged 07-21, the day the blades got names — Occam was first.)
+app.get('/rename', async (req, res) => {
+  try {
+    if (!ready) return err(res, new Error('not ready'))
+    const itemName = req.query.item
+    const newName = req.query.name
+    if (!itemName || !newName) return err(res, new Error('item and name required'))
+    // exact-match resolve skips the damaged variants — an anvil is an anvil, gather all three
+    const anvilIds = ['anvil', 'chipped_anvil', 'damaged_anvil'].flatMap(n => resolveBlockIds(n))
+    const ab = bot.findBlock({ matching: anvilIds, maxDistance: 16 })
+    if (!ab) return err(res, new Error('no anvil within 16'))
+    await bot.pathfinder.goto(new goals.GoalNear(ab.position.x, ab.position.y, ab.position.z, 2))
+    const item = bot.inventory.items().find(i => i.name === itemName)
+    if (!item) return err(res, new Error(`no ${itemName} in pockets`))
+    const anvil = await bot.openAnvil(ab)
+    try {
+      await anvil.rename(item, newName)
+      emitEvent('rename', `${itemName} christened "${newName}" — now lv${bot.experience.level}`)
+      ok(res, { renamed: itemName, name: newName, myLevelNow: bot.experience.level })
+    } finally {
+      try { anvil.close() } catch (e) {}
     }
   } catch (e) { err(res, e) }
 })
