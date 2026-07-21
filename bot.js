@@ -1589,7 +1589,7 @@ const laneNarrate = (what) => {
   pilotLane.narrated = Date.now()
   emitEvent('combat', `${what} deferred — pilot lane held (${pilotLane.why})`)
 }
-// ---- ENGAGEABLE vs WATCHED (07-21, the mansion debrief, Adam's diagnosis: creepers pacing
+// ---- ENGAGEABLE vs WATCHED (07-21, the mansion debrief, the helmsman's diagnosis: creepers pacing
 // dark rooms OVERHEAD were air-connected and honestly perceptible, so the pack counter armed
 // withdrawals against enemies the fight didn't contain — "legs fleeing the ceiling while the
 // head fought the door." The rule: perception may flow through the floor; URGENCY must flow

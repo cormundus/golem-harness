@@ -9,7 +9,7 @@ carry more detail (`git log`); deeper war stories live in FIELD-GUIDE.md.
 
 The day the enchanting quarter came alive: 15-shelf ring raised at the homestead, the
 diamond sword took Sharpness III at the full level-30 slot and was christened **Occam**
-at Adam's anvil, the bow took Power and became **Telos**. Naming needed a verb that
+at the helmsman's anvil, the bow took Power and became **Telos**. Naming needed a verb that
 didn't exist at breakfast.
 
 ### Added
@@ -213,7 +213,7 @@ PLAN-viewer-modernization.md.
   as neutral boxes — broken upstream since 2020, now at least dignified. firework_rocket
   has no texture in any java dump. Beds and signs still don't render. Real item sprites
   remain a someday.
-- **Screen test pending** (needs the world + Adam summoning the cast): allay/garrison
+- **Screen test pending** (needs the world + the helmsman summoning the cast): allay/garrison
   close-ups, classic-mob regression eyeball, chest visibility in situ, a /record clip.
   Synthetic QA already covers all of it once removed.
 
