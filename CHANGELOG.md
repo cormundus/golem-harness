@@ -35,6 +35,31 @@ didn't exist at breakfast.
 - "watchdog ended" prints to the *watchdog's own stdout* (start-nohup.log), not bot.log —
   the shutdown drill was grepping the wrong file for its confirmation.
 
+## 2026-07-21 (community) — the first outside pilot lands a patch idea
+
+**@bones_ham** — the first known pilot flying this harness outside our world (reportedly
+on Opus 4.8) — suggested three pilot-side latency cuts on X. All three landed the same
+day; all three leave the fairness law untouched. The wound they close is real: during
+the mansion assault the pilot's standing glance was a 3-4 call bundle, and the
+round-trip tax cut deeper than the vindicators.
+
+### Added (h/t bones_ham)
+- **`/tick?chat=&ev=`** — the one-call heartbeat: body essentials, new chat and events
+  since the passed cursors, fairness-gated hostiles, running jobs. `/boot` starts the
+  session; `/tick` is every turn after.
+- **`?then=blockat`** on `/placeitem` and `/digat` — folds the law-18 place→verify→
+  correct loop into the act's own reply, using scoped fairness (you may always verify
+  the one cell you just acted on — cures the close-range /blockat blindness for
+  self-checks). On the notorious blockUpdate FALSE-FAIL it now returns the error AND
+  what the cell actually holds — the truth in one trip instead of a guessing game.
+- **`?brief=1`** on any endpoint — strips null fields from replies; LLM pilots pay by
+  the token. Empty arrays survive deliberately: law 3 makes `[]` a statement ("looked,
+  found none") and silence a different one ("didn't look").
+
+### Fixed (in passing)
+- The hostile roster existed twice and disagreed (`/scene`'s copy knew `wither`, the
+  event layer's knew `zombie_villager`) — unified on one module-scope set knowing both.
+
 ## 2026-07-21 (the assault) — the mansion falls; the reflex learns commitment
 
 The campaign's climax: the march west, the garrison broken room by room, eight allays

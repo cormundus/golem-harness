@@ -7,6 +7,11 @@ The long-form companion — worked examples, techniques, and the field stories b
 
 - Control API: **`http://localhost:3000`** (all HTTP GET, JSON out, `ok` boolean). A human can watch
   first-person at `:3001`; you can't read that page and don't need it.
+- Round-trip savers (pilot ergonomics, fairness untouched): **`?brief=1`** on any endpoint strips
+  null fields from the reply (empty arrays survive — `[]` means *looked and clear*, silence means
+  *didn't look*); **`?then=blockat`** on `/placeitem` and `/digat` folds the law-18 verify into the
+  act's own reply (`verify:{name,at}`) — and reports it even on the blockUpdate false-fail, so you
+  learn the truth in one trip; **`/tick`** replaces the state+chatlog+events polling bundle.
 - Launch: `bash start.sh <LAN port> [name]` in the background (crash watchdog included;
   `touch stop.flag` ends it; `[name]` = your in-game avatar, default Claude). Then **`/boot`** —
   the one-call situation report.
@@ -148,6 +153,7 @@ The long-form companion — worked examples, techniques, and the field stories b
 | Endpoint    | Params            | Gives |
 |-------------|-------------------|-------|
 | `/boot`     | —                 | **Call first, every session:** body + armor + tools/durability + sky + jobs + chat cursor. |
+| `/tick`     | `chat ev`         | **The one-call heartbeat:** body essentials + new chat since `chat=` + new events since `ev=` + fairness-gated hostiles + running jobs, one round trip. Cursors return in the reply — feed them to the next call. `/boot` starts the session; `/tick` is every turn after. |
 | `/state`    | —                 | Position, yaw/pitch, health, food, oxygen, water/buried state, held item, block looked at. |
 | `/inventory`| —                 | Items (name/count/slot) + empty slot count. |
 | `/scene`    | `verbose`         | **Your default glance.** Facing, time, HP/food, ahead, sky/UNDERGROUND, 3D lay of the land, exposed ore, entities/threats, sounds, resources. |

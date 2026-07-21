@@ -384,7 +384,7 @@ function dayPhase (t) {
   if (t < 22200) return 'night'
   return 'sunrise'
 }
-const HOSTILE_NAMES = new Set(['zombie', 'husk', 'drowned', 'skeleton', 'stray', 'bogged', 'creeper', 'spider', 'cave_spider', 'witch', 'enderman', 'slime', 'phantom', 'pillager', 'vindicator', 'evoker', 'ravager', 'zombified_piglin', 'piglin', 'piglin_brute', 'hoglin', 'zoglin', 'warden', 'blaze', 'ghast', 'magma_cube', 'silverfish', 'endermite', 'vex', 'guardian', 'elder_guardian', 'shulker', 'zombie_villager', 'wither_skeleton', 'breeze'])
+const HOSTILE_NAMES = new Set(['zombie', 'husk', 'drowned', 'skeleton', 'stray', 'bogged', 'creeper', 'spider', 'cave_spider', 'witch', 'enderman', 'slime', 'phantom', 'pillager', 'vindicator', 'evoker', 'ravager', 'zombified_piglin', 'piglin', 'piglin_brute', 'hoglin', 'zoglin', 'warden', 'blaze', 'ghast', 'magma_cube', 'silverfish', 'endermite', 'vex', 'guardian', 'elder_guardian', 'shulker', 'zombie_villager', 'wither_skeleton', 'wither', 'breeze'])
 
 // ---- REFLEX LAYER (cannibalized from Mindcraft's modes.js): always-on node-process reflexes that
 // run WITHOUT a model call. Each reflex does a cheap check() every ~300ms; when it fires, act() runs
@@ -1936,8 +1936,66 @@ function hasLegalMove() {
 
 // ---- HTTP control layer ----
 const app = express()
-const ok = (res, data) => res.json({ ok: true, ...data })
+// ?brief=1 on ANY endpoint strips null/undefined fields from the reply — LLM pilots pay
+// by the token and "reason":null earns nothing. Empty ARRAYS survive on purpose: law 3
+// makes [] a statement ("looked, found none") and silence a different one ("didn't look").
+// (Suggested by bones_ham — the harness's first outside pilot — 07-21. Fairness untouched.)
+const debrief = (v) => {
+  if (Array.isArray(v)) return v.map(debrief)
+  if (v && typeof v === 'object') {
+    const out = {}
+    for (const [k, val] of Object.entries(v)) {
+      if (val === null || val === undefined) continue
+      out[k] = debrief(val)
+    }
+    return out
+  }
+  return v
+}
+const ok = (res, data) => {
+  const body = { ok: true, ...data }
+  res.json(res.req && res.req.query && res.req.query.brief ? debrief(body) : body)
+}
 const err = (res, e) => res.json({ ok: false, error: e.message || String(e) })
+
+// GET /tick?chat=&ev= : the ONE-CALL HEARTBEAT (bones_ham's ask, 07-21 — the pilot's
+// standing glance used to be a 3-4 call bundle, and mid-combat that round-trip tax cut
+// deeper than the vindicators). Body essentials + new chat since ?chat= + new events
+// since ?ev= + fairness-gated hostiles + running jobs, one round trip. Cursors return in
+// the reply; feed them to the next call. /boot is session-start; /tick is every turn
+// after. Perception rules unchanged — same gates as /scene, just fewer trips.
+app.get('/tick', (req, res) => {
+  try {
+    if (!ready) return err(res, new Error('not ready'))
+    const chatSince = parseInt(req.query.chat || '0')
+    const evSince = parseInt(req.query.ev || '0')
+    const e = bot.entity
+    const w = waterState(bot)
+    const fill = airFlood({ radius: 28, cap: 15000 })
+    const threats = []
+    for (const en of Object.values(bot.entities)) {
+      if (!en || en === bot.entity || !en.position) continue
+      const nm = String(en.name || '').toLowerCase()
+      if (!HOSTILE_NAMES.has(nm)) continue
+      const d = en.position.distanceTo(e.position)
+      if (d > 48) continue
+      if (!entityPerceptible(en, fill)) continue
+      threats.push({ name: nm, dir: compass(en.position.x - e.position.x, en.position.z - e.position.z), dist: +d.toFixed(1) })
+    }
+    threats.sort((a, b) => a.dist - b.dist)
+    ok(res, {
+      pos: round(e.position),
+      hp: bot.health, food: bot.food, xp: bot.experience.level,
+      held: bot.heldItem ? bot.heldItem.name : null,
+      ...(w && (w.inWater || w.submerged || w.current || w.buried)
+        ? { water: { inWater: w.inWater, submerged: w.submerged, current: w.current, buried: w.buried, oxygen: bot.oxygenLevel } } : {}),
+      threats,
+      chat: { cursor: chatSeq, messages: chatLog.filter(m => m.id > chatSince) },
+      events: { cursor: eventSeq, list: eventLog.filter(x => x.id > evSince) },
+      jobs: jobs.list()
+    })
+  } catch (e) { err(res, e) }
+})
 
 app.get('/state', (req, res) => {
   if (!ready) return err(res, new Error('bot not spawned yet'))
@@ -2860,7 +2918,12 @@ app.get('/digat', async (req, res) => {
       return err(res, new Error(`refusing to dig ${b.name} holding ${bot.heldItem ? bot.heldItem.name : 'nothing'} — drop would be destroyed (need pick tier ${needTier})`))
     }
     await bot.dig(b)
-    ok(res, { dug: b.name, at: round(p), with: bot.heldItem ? bot.heldItem.name : null })
+    // ?then=blockat (bones_ham, 07-21): act+verify in one trip — what does the cell hold
+    // now? (air = clean dig; anything else = sand/gravel fell in, water flowed, etc.)
+    const verify = (req.query.then === 'blockat')
+      ? (() => { const nb = bot.blockAt(p); return { name: nb ? nb.name : '?', at: round(p) } })()
+      : undefined
+    ok(res, { dug: b.name, at: round(p), with: bot.heldItem ? bot.heldItem.name : null, verify })
   } catch (e) { err(res, e) }
 })
 
@@ -3001,8 +3064,26 @@ app.get('/placeitem', async (req, res) => {
       await bot.lookAt(new Vec3(x + 0.5, y + 0.5, z + 0.5), true)
       await bot.placeBlock(ref, faceVec)
     }
-    ok(res, { placed: name, at: { x, y, z }, face: faceDir || undefined })
-  } catch (e) { err(res, e) }
+    // ?then=blockat (bones_ham, 07-21): fold act+verify into one trip. Scoped fairness —
+    // you may always verify the one cell you just acted on (you clicked its neighbor with
+    // line of sight); this also cures the close-range /blockat blindness for self-checks.
+    const verify = (req.query.then === 'blockat')
+      ? (() => { const b = bot.blockAt(new Vec3(x, y, z)); return { name: b ? b.name : '?', at: { x, y, z } } })()
+      : undefined
+    ok(res, { placed: name, at: { x, y, z }, face: faceDir || undefined, verify })
+  } catch (e) {
+    // then=blockat turns the notorious blockUpdate FALSE-FAIL (the block stands, the
+    // event never fired) into an honest answer: the error AND what the cell holds now.
+    if (req.query.then === 'blockat' && /blockUpdate/i.test(String(e && e.message))) {
+      try {
+        const Vec3 = require('vec3').Vec3
+        const vx = Math.floor(parseFloat(req.query.x)), vy = Math.floor(parseFloat(req.query.y)), vz = Math.floor(parseFloat(req.query.z))
+        const b = bot.blockAt(new Vec3(vx, vy, vz))
+        return res.json({ ok: false, error: e.message, verify: { name: b ? b.name : '?', at: { x: vx, y: vy, z: vz } } })
+      } catch (e2) {}
+    }
+    err(res, e)
+  }
 })
 
 // /sign?x=&y=&z=&text=&face=&item= — place a sign and WRITE it, one motion (07-17, the attic
@@ -3420,10 +3501,7 @@ app.get('/scene', (req, res) => {
     // grouped entity summary + hostiles
     const threats = []
     const groups = {}
-    const HOSTILES = new Set(['zombie','husk','drowned','skeleton','stray','bogged','creeper','spider',
-      'cave_spider','enderman','witch','slime','phantom','pillager','vindicator','ravager','evoker',
-      'zombified_piglin','piglin','piglin_brute','hoglin','zoglin','blaze','ghast','magma_cube','warden',
-      'vex','silverfish','endermite','guardian','elder_guardian','shulker','wither_skeleton','wither','breeze'])
+    const HOSTILES = HOSTILE_NAMES
     try {
       const here = pos
       for (const en of Object.values(bot.entities)) {
