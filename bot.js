@@ -324,6 +324,19 @@ bot.on('end', (r) => {
   setTimeout(() => process.exit(1), 500)
 })
 
+// ---- SSE PUSH STREAM (07-21 latency session): /stream holds the connection open and pushes
+// every chat line and event as it happens — one `data: {json}` line each. The pilot's old
+// heartbeat was a log file, a pipe, a regex, and a notification queue between the world and
+// the driver (and a truncation-wedge waiting to happen); this is the world speaking directly.
+// Zero dependencies: plain HTTP, drink it with `curl -N -s localhost:3000/stream`.
+const sseClients = new Set()
+function ssePush (payload) {
+  if (!sseClients.size) return
+  const line = 'data: ' + JSON.stringify(payload) + '\n\n'
+  for (const c of sseClients) { try { c.write(line) } catch (e) { sseClients.delete(c) } }
+}
+setInterval(() => { for (const c of sseClients) { try { c.write(':ka\n\n') } catch (e) { sseClients.delete(c) } } }, 15000)
+
 // ---- chat capture (so the driver can hear the world, not just speak to it) ----
 let chatSeq = 0
 const chatLog = []
@@ -331,6 +344,7 @@ function pushChat(from, message, kind) {
   chatLog.push({ id: ++chatSeq, t: Date.now(), from, msg: message, kind })
   if (chatLog.length > 300) chatLog.splice(0, chatLog.length - 300)
   console.log(`[chat] <${from}> ${message}`)
+  ssePush({ ch: 'chat', id: chatSeq, from, msg: message, kind })
 }
 bot.on('chat', (username, message) => { if (username !== USERNAME) pushChat(username, message, 'chat') })
 bot.on('whisper', (username, message) => pushChat(username, message, 'whisper'))
@@ -361,6 +375,10 @@ function emitEvent(kind, msg, data) {
     console.log('[event] ' + kind + ' ' + msg)   // stdout line so the log-tailing Monitor wakes the driver
     eventLog.push({ id: ++eventSeq, t: Date.now(), kind, msg, data: data || null })
     if (eventLog.length > 400) eventLog.splice(0, eventLog.length - 400)
+    // push carries CONTEXT (07-21): the wake-up call IS the briefing — no follow-up poll
+    // needed to learn where I stood and how hurt I was when the thing happened.
+    ssePush({ ch: 'event', id: eventSeq, kind, msg, data: data || null,
+      pos: ready ? round(bot.entity.position) : null, hp: ready ? bot.health : null, food: ready ? bot.food : null })
   } catch (e) {}
 }
 
@@ -2012,6 +2030,7 @@ const ok = (res, data) => {
 }
 const err = (res, e) => res.json({ ok: false, error: e.message || String(e) })
 
+let lastTickSnap = null   // /tick?delta=1 diffs against the previous tick (single-pilot assumption)
 // GET /tick?chat=&ev= : the ONE-CALL HEARTBEAT (bones_ham's ask, 07-21 — the pilot's
 // standing glance used to be a 3-4 call bundle, and mid-combat that round-trip tax cut
 // deeper than the vindicators). Body essentials + new chat since ?chat= + new events
@@ -2037,7 +2056,7 @@ app.get('/tick', (req, res) => {
       threats.push({ name: nm, dir: compass(en.position.x - e.position.x, en.position.z - e.position.z), dist: +d.toFixed(1) })
     }
     threats.sort((a, b) => a.dist - b.dist)
-    ok(res, {
+    const full = {
       pos: round(e.position),
       hp: bot.health, food: bot.food, xp: bot.experience.level,
       held: bot.heldItem ? bot.heldItem.name : null,
@@ -2047,7 +2066,21 @@ app.get('/tick', (req, res) => {
       chat: { cursor: chatSeq, messages: chatLog.filter(m => m.id > chatSince) },
       events: { cursor: eventSeq, list: eventLog.filter(x => x.id > evSince) },
       jobs: jobs.list()
-    })
+    }
+    // ?delta=1 (07-21): report only what CHANGED since the last tick — fewer tokens in,
+    // faster pilot decisions out. Threats/water/chat/events always report (safety and
+    // cursors are never elided); pos elides under 1 block of drift; vitals elide when equal.
+    if (req.query.delta === '1' && lastTickSnap) {
+      const s = lastTickSnap
+      if (full.pos && s.pos && Math.abs(full.pos.x - s.pos.x) + Math.abs(full.pos.y - s.pos.y) + Math.abs(full.pos.z - s.pos.z) < 1) delete full.pos
+      if (full.hp === s.hp) delete full.hp
+      if (full.food === s.food) delete full.food
+      if (full.xp === s.xp) delete full.xp
+      if (full.held === s.held) delete full.held
+      if (!full.jobs.length && !s.jobsLen) delete full.jobs
+    }
+    lastTickSnap = { pos: round(e.position), hp: bot.health, food: bot.food, xp: bot.experience.level, held: bot.heldItem ? bot.heldItem.name : null, jobsLen: (full.jobs || []).length }
+    ok(res, full)
   } catch (e) { err(res, e) }
 })
 
@@ -2262,29 +2295,41 @@ app.get('/strike', async (req, res) => {
     if (/creeper/.test(String(target.name))) {
       return err(res, new Error('refusing: never melee a creeper — flee is the law'))
     }
-    claimLane('strike', 15000)                     // soft lane: the approach + swing are MINE (07-21)
-    if (target.position.distanceTo(here) > 3) {
-      await bot.pathfinder.goto(new goals.GoalNear(target.position.x, target.position.y, target.position.z, 2))
+    claimLane('strike', 20000)                     // soft lane: the approach + swings are MINE (07-21)
+    // ?max=N (07-21 latency session): bounded swing SEQUENCE in one round trip — re-acquire,
+    // approach, charged swing, dead-watch, repeat. Exits honestly: dead / target gone / max.
+    const max = Math.min(5, Math.max(1, parseInt(req.query.max || '1')))
+    let struckAt = null, dead = false, swings = 0
+    for (let i = 0; i < max && !dead; i++) {
+      const p0 = bot.entity.position
+      const tgt = i === 0 ? target : Object.values(bot.entities)
+        .filter(en => en !== bot.entity && en.position && (en.name === ename || en.displayName === ename) && en.position.distanceTo(p0) <= 16)
+        .sort((a, b) => a.position.distanceTo(p0) - b.position.distanceTo(p0))[0]
+      if (!tgt) break
+      if (tgt.position.distanceTo(p0) > 3) {
+        await bot.pathfinder.goto(new goals.GoalNear(tgt.position.x, tgt.position.y, tgt.position.z, 2))
+      }
+      const alreadyHeld = bot.heldItem && bot.heldItem.name === iname
+      await bot.equip(it, 'hand')
+      // COOLDOWN (learned on the first chicken, 07-15): a slot change resets the 1.9 attack charge —
+      // swinging immediately after equip lands a token-damage hit. ~13 ticks recharges a sword fully.
+      if (!alreadyHeld) await bot.waitForTicks(13)
+      else if (i > 0) await bot.waitForTicks(11)   // between loop swings: full recharge, no token hits
+      await bot.lookAt(tgt.position.offset(0, 0.6, 0), true)
+      await bot.waitForTicks(2)                    // the tick race: aim packet lands NEXT tick
+      struckAt = tgt.position.clone()
+      bot.attack(tgt)
+      swings++
+      // watch for the despawn instead of guessing a delay (the 700ms check called a real kill a miss)
+      for (let w = 0; w < 15 && !dead; w++) {
+        await new Promise(r => setTimeout(r, 100))
+        dead = !bot.entities[tgt.id] || (tgt.health !== undefined && tgt.health <= 0)
+      }
     }
-    const alreadyHeld = bot.heldItem && bot.heldItem.name === iname
-    await bot.equip(it, 'hand')
-    // COOLDOWN (learned on the first chicken, 07-15): a slot change resets the 1.9 attack charge —
-    // swinging immediately after equip lands a token-damage hit. ~13 ticks recharges a sword fully.
-    if (!alreadyHeld) await bot.waitForTicks(13)
-    await bot.lookAt(target.position.offset(0, 0.6, 0), true)
-    await bot.waitForTicks(2)                      // the tick race: aim packet lands NEXT tick
-    const spot = target.position.clone()
-    bot.attack(target)
-    // watch for the despawn instead of guessing a delay (the 700ms check called a real kill a miss)
-    let dead = false
-    for (let w = 0; w < 15 && !dead; w++) {
-      await new Promise(r => setTimeout(r, 100))
-      dead = !bot.entities[target.id] || (target.health !== undefined && target.health <= 0)
+    if (dead && struckAt) {
+      try { await bot.pathfinder.goto(new goals.GoalNear(struckAt.x, struckAt.y, struckAt.z, 1)) } catch (e) {}  // hoover the drops
     }
-    if (dead) {
-      try { await bot.pathfinder.goto(new goals.GoalNear(spot.x, spot.y, spot.z, 1)) } catch (e) {}  // hoover the drops
-    }
-    ok(res, { struck: ename, with: iname, at: round(spot), killed: dead, note: dead ? 'walked to drops' : 'still standing — swing again deliberately' })
+    ok(res, { struck: ename, with: iname, swings, at: struckAt ? round(struckAt) : null, killed: dead, note: dead ? 'walked to drops' : swings ? 'still standing — swing again deliberately' : 'target left reach' })
   } catch (e) { err(res, e) } finally { releaseLane() }
 })
 
@@ -2299,25 +2344,46 @@ app.get('/shoot', async (req, res) => {
     if (!ready) return err(res, new Error('not ready'))
     const ename = req.query.name
     if (!ename) return err(res, new Error('need name='))
-    const bow = bot.inventory.items().find(i => i.name === 'bow')
-    if (!bow) return err(res, new Error('no bow in inventory'))
-    if (!bot.inventory.items().some(i => i.name === 'arrow')) return err(res, new Error('no arrows'))
-    const here = bot.entity.position
-    const target = Object.values(bot.entities)
-      .filter(en => en !== bot.entity && en.position && (en.name === ename || en.displayName === ename) && en.position.distanceTo(here) <= 25)
-      .sort((a, b) => a.position.distanceTo(here) - b.position.distanceTo(here))[0]
-    if (!target) return err(res, new Error(`no ${ename} within 25`))
-    if (target.type === 'player' || (bot.players && Object.values(bot.players).some(p => p.entity === target))) {
-      return err(res, new Error('refusing: never shoot players'))
+    // ?max=N (07-21 latency session): a bounded VOLLEY in one round trip — the assault's
+    // hand-rolled bash loops (four arrows = four turns + sleeps ≈ 15s of wall time) move
+    // into the body, where they run at game speed. Honest exits: dead, target gone,
+    // out of arrows, max reached — or NO-PROGRESS (two arrows, range unchanged = you are
+    // shooting a wall; the pilot burned ~8 arrows learning this rule, now the verb knows it).
+    const max = Math.min(8, Math.max(1, parseInt(req.query.max || '1')))
+    const shots = []
+    let outcome = 'max'
+    for (let i = 0; i < max; i++) {
+      if (!bot.inventory.items().find(x => x.name === 'bow')) { outcome = 'no-bow'; break }
+      if (!bot.inventory.items().some(x => x.name === 'arrow')) { outcome = 'no-arrows'; break }
+      const here = bot.entity.position
+      const target = Object.values(bot.entities)
+        .filter(en => en !== bot.entity && en.position && (en.name === ename || en.displayName === ename) && en.position.distanceTo(here) <= 25)
+        .sort((a, b) => a.position.distanceTo(here) - b.position.distanceTo(here))[0]
+      if (!target) { outcome = shots.length ? 'no-target' : null; if (!shots.length) return err(res, new Error(`no ${ename} within 25`)); break }
+      if (target.type === 'player' || (bot.players && Object.values(bot.players).some(p => p.entity === target))) {
+        return err(res, new Error('refusing: never shoot players'))
+      }
+      const dist = target.position.distanceTo(here)
+      await drawAndLoose(target)                    // the same arrow the combat reflex fires
+      let dead = false
+      for (let w = 0; w < 20 && !dead; w++) {
+        await new Promise(r => setTimeout(r, 100))
+        dead = !bot.entities[target.id] || (target.health !== undefined && target.health <= 0)
+      }
+      shots.push({ dist: +dist.toFixed(1), killed: dead })
+      if (dead) { outcome = 'dead'; break }
+      const prev = shots[shots.length - 2]
+      if (prev && Math.abs(prev.dist - dist) < 0.6) { outcome = 'no-progress'; break }
     }
-    const dist = target.position.distanceTo(here)
-    await drawAndLoose(target)                      // the same arrow the combat reflex fires
-    let dead = false
-    for (let w = 0; w < 20 && !dead; w++) {
-      await new Promise(r => setTimeout(r, 100))
-      dead = !bot.entities[target.id] || (target.health !== undefined && target.health <= 0)
-    }
-    ok(res, { shot: ename, dist: +dist.toFixed(1), killed: dead, note: dead ? 'down' : 'still up — check where the arrow went (/gaze) and loose again' })
+    const last = shots[shots.length - 1] || {}
+    ok(res, {
+      shot: ename, shotsFired: shots.length, shots, outcome,
+      dist: last.dist, killed: !!last.killed,
+      note: outcome === 'dead' ? 'down'
+        : outcome === 'no-progress' ? 'range never changed — something between us; reposition, do not loose again'
+        : outcome === 'no-arrows' ? 'quiver empty'
+        : 'still up — check where the arrow went (/gaze) and loose again'
+    })
   } catch (e) { err(res, e) }
 })
 app.get('/where', (req, res) => {
@@ -2680,13 +2746,25 @@ app.get('/lookat', async (req, res) => {
 // /chat?msg= speaks; /chat with NO msg LISTENS (last 20 lines + cursor) — the symmetry the
 // second pilot reached for instinctively ("I can SEND chat but couldn't find how to READ
 // incoming messages", 07-20). /chatlog?since= remains the cursored form for the heartbeat.
-app.get('/chat', (req, res) => {
-  if (req.query.msg === undefined) {
+app.get('/chat', async (req, res) => {
+  if (req.query.msg === undefined && req.query.lines === undefined) {
     return ok(res, {
       cursor: chatSeq,
       recent: chatLog.slice(-20),
-      hint: 'poll /chatlog?since=<cursor> for only-new messages; /chat?msg=... to speak'
+      hint: 'poll /chatlog?since=<cursor> for only-new messages; /chat?msg=... to speak; ?lines=a|b|c for a paced multi-line'
     })
+  }
+  // ?lines=a|b|c (07-21 latency session): the body handles the anti-kick spacing (2.5s —
+  // law 8's rapid-pair kick is especially tempting and especially fatal mid-crisis).
+  // Every ceremony and battle-report used to be three pilot turns with hand-rolled sleeps.
+  if (req.query.lines !== undefined) {
+    const lines = String(req.query.lines).split('|').map(s => s.trim()).filter(Boolean).slice(0, 5)
+    if (!lines.length) return err(res, new Error('lines= given but empty'))
+    for (let i = 0; i < lines.length; i++) {
+      if (i > 0) await new Promise(r => setTimeout(r, 2500))
+      bot.chat(lines[i])
+    }
+    return ok(res, { said: lines.length, lines })
   }
   bot.chat(req.query.msg || ''); ok(res, { said: req.query.msg })
 })
@@ -2694,7 +2772,44 @@ app.get('/chatlog', (req, res) => {
   const since = parseInt(req.query.since || '0')
   ok(res, { cursor: chatSeq, messages: chatLog.filter(m => m.id > since) })
 })
+// GET /stream — the SSE push feed (see ssePush above). Every chat line and every event,
+// as it happens, each with pos/HP/food context baked in. `curl -N -s .../stream`.
+app.get('/stream', (req, res) => {
+  res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' })
+  res.write(': connected — every chat + event pushes here; keepalive every 15s\n\n')
+  sseClients.add(res)
+  req.on('close', () => sseClients.delete(res))
+})
 app.get('/stop', (req, res) => { try { stopFollow() } catch {} ; safeStop(); try { bot.clearControlStates() } catch {} ; releaseLane(); const jobsCancelled = jobs.stopAll(); ok(res, { stopped: true, jobsCancelled }) })
+
+// GET /batch?do=<step>|<step>... : a SHORT linear verb chain, one round trip (07-21 latency
+// session). Each step is a URI-component-ENCODED path+query ("/equip%3Fname%3Dbow"); steps
+// run in order via self-dispatch and SHORT-CIRCUIT on the first ok:false. CAPPED AT 5 —
+// deliberately, in code and not in discipline: this harness's soul is query→act→verify with
+// the model in the loop. A bounded batch compresses one plan-step; an unbounded one scripts
+// a player, and then nobody is playing. /batch and /stream refuse to nest.
+app.get('/batch', async (req, res) => {
+  try {
+    if (!ready) return err(res, new Error('not ready'))
+    const raw = String(req.query.do || '')
+    if (!raw) return err(res, new Error('do= required: pipe-separated, URI-encoded /verb?query steps'))
+    const steps = raw.split('|').map(s => decodeURIComponent(s.trim())).filter(Boolean)
+    if (steps.length > 5) return err(res, new Error(`${steps.length} steps — the cap is 5, by design (the pilot stays in the loop)`))
+    const results = []
+    for (const step of steps) {
+      if (!step.startsWith('/')) { results.push({ step, ok: false, error: 'steps start with /' }); break }
+      if (/^\/(batch|stream)\b/.test(step)) { results.push({ step, ok: false, error: 'refused: no nesting' }); break }
+      let r
+      try {
+        const resp = await fetch(`http://127.0.0.1:${CTRL_PORT}${step}`)
+        r = await resp.json()
+      } catch (e2) { r = { ok: false, error: 'dispatch failed: ' + e2.message } }
+      results.push({ step, ...r })
+      if (!r.ok) break                            // short-circuit: verify before act, always
+    }
+    ok(res, { steps: results.length, completed: results.filter(r => r.ok).length, results })
+  } catch (e) { err(res, e) }
+})
 
 // GET /brace?sec=N : the PILOT-HOLD (07-21 debrief — the bounded version of switching the
 // combat reflex off to cross a room). For N seconds (cap 30) the legs answer no discretionary

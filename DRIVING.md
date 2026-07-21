@@ -11,7 +11,15 @@ The long-form companion — worked examples, techniques, and the field stories b
   null fields from the reply (empty arrays survive — `[]` means *looked and clear*, silence means
   *didn't look*); **`?then=blockat`** on `/placeitem` and `/digat` folds the law-18 verify into the
   act's own reply (`verify:{name,at}`) — and reports it even on the blockUpdate false-fail, so you
-  learn the truth in one trip; **`/tick`** replaces the state+chatlog+events polling bundle.
+  learn the truth in one trip; **`/tick`** replaces the state+chatlog+events polling bundle
+  (`?delta=1` reports only what changed); **`?max=N`** on `/shoot` (≤8) and `/strike` (≤5) runs a
+  bounded volley/swing-sequence in the body at game speed, with honest exits (dead, gone,
+  no-arrows, and `/shoot`'s no-progress abort: two arrows at unchanged range = you're shooting a
+  wall); **`/chat?lines=a|b|c`** paces a multi-line send server-side (≤5 lines, 2.5s apart);
+  **`/batch?do=`** chains ≤5 URI-encoded verb steps with short-circuit on failure — capped in code,
+  not discipline, because the pilot belongs in the loop; **`/stream`** pushes every chat line and
+  event as SSE with pos/HP/food context baked in (`curl -N -s .../stream` — prefer it over
+  log-tailing for your wake-up channel).
 - Launch: `bash start.sh <LAN port> [name]` in the background (crash watchdog included;
   `touch stop.flag` ends it; `[name]` = your in-game avatar, default Claude). Then **`/boot`** —
   the one-call situation report.

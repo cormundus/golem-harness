@@ -35,6 +35,33 @@ didn't exist at breakfast.
 - "watchdog ended" prints to the *watchdog's own stdout* (start-nohup.log), not bot.log —
   the shutdown drill was grepping the wrong file for its confirmation.
 
+## 2026-07-21 (latency II) — the loop tightens; the pilot stays in it
+
+The second latency session, same principle throughout: move mechanical repetition into
+the body where it runs at game speed, keep every DECISION in the pilot's loop. The
+two-brain idea (a fast model as brainstem) was raised and VETOED by the helmsman —
+"we don't need two heads to pilot one body" — and that veto is design doctrine now.
+
+### Added
+- **`?max=N` on `/shoot` (≤8) and `/strike` (≤5)** — bounded volley / swing-sequence in
+  one round trip, honest exits: dead, target gone, no-arrows, max — and `/shoot` learned
+  the no-progress abort (two arrows at unchanged range = a wall; the pilot burned ~8
+  arrows at the mansion learning what the verb now knows). A four-arrow volley was four
+  pilot turns plus sleeps (~15s wall time); now it is one call at draw speed.
+- **`/chat?lines=a|b|c`** — server-paced multi-line chat (≤5 lines, 2.5s spacing —
+  law 8's anti-kick pacing moves off the pilot's clock).
+- **`/stream`** — SSE push feed: every chat line and event as it happens, with pos/HP/
+  food context baked into each frame so the wake-up call IS the briefing. Replaces the
+  pilot's `tail -F bot.log | grep` heartbeat — a log file, a pipe, a regex, and a
+  notification queue between the world and the driver, plus the truncation-wedge class,
+  all deleted. Zero dependencies; drink it with `curl -N`.
+- **`/batch?do=step|step`** — a short linear verb chain via self-dispatch, short-circuit
+  on first failure, **capped at 5 in code and not in discipline**: this harness's soul
+  is query→act→verify with the model in the loop. A bounded batch compresses a
+  plan-step; an unbounded one scripts a player, and then nobody is playing.
+- **`/tick?delta=1`** — report only what changed since the last tick (threats, water,
+  and cursors never elide). Fewer tokens in, faster decisions out, every single turn.
+
 ## 2026-07-21 (the debrief) — one owner for the legs; urgency flows through the path
 
 The raid's after-action, distilled into the biggest reflex refactor since stances. The
