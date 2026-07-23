@@ -5,6 +5,48 @@ bit us in the world first. Each fix records the wound that taught it — the rea
 the point, not just the diff. Dates are play-sessions, not releases. Full commit messages
 carry more detail (`git log`); deeper war stories live in FIELD-GUIDE.md.
 
+## 2026-07-22 — the door deadlock falls; the hill pays for the hole
+
+Aria's crowning day and the first terraforming lesson — and the day the harness's oldest
+nemesis died. "We seriously need to figure out doors" (the helmsman, mid-fumble) led to
+the forensics: doors weren't ONE bug but a **three-actor deadlock**. The executor stalls
+at doorways; the unstuck reflex "helps" by toggling the door — blind, so it slams OPEN
+doors shut — then breaks the wedge with a stop that murders the pilot's verb; and on long
+treks the 10s stall check can't tell path-*computation* from a physical wedge, so healthy
+400-block goals died at second eleven. Each actor locally sensible; the composition, a
+deadlock. Validated same-session: `doorway-commit` arrivals through the Farmhouse door in
+one verb, both directions, and the log's new line — "opened oak_door — path continues."
+
+### Fixed
+- **Unstuck door assist checks `open` before toggling** — an already-open door is never
+  the wedge; toggling it shut was manufacturing the next wedge (the "manners: closed
+  behind me" lines were the wrap logging unstuck's own vandalism).
+- **When a door WAS the wedge, the path lives** — no more safeStop on a successful door
+  open; if still stuck next cycle the door's open, so it falls through to the wedge-break.
+  The reflex now fixes the blocker without executing the journey.
+- **Stall check listens for planner heartbeats** — `path_update` events mark computation;
+  while they flow, patience extends 10s→30s. Long treks stopped dying at birth.
+- **`/safe_goto` retries once on "Path was stopped"** — that error means *a reflex
+  intervened*, and the blocker is usually gone; one retry (1.5s) before reporting failure.
+
+### Learned (drill corrections + open wounds, queued)
+- **Blocking verbs need background curls** (-m 550): a short curl timeout hangs up
+  mid-walk and reads as a ghost "empty reply" bug. Hit twice before diagnosing.
+- **/toss can't outrange the bot's own pickup vacuum** (re-grabbed its own toss twice) and
+  `count=N` drains at most one stack. Handoff protocol: chests.
+- **/journal is read-only to the pilot** — "journal what matters" (law 23) with no pen;
+  workaround is a direct disk append, fix is a write param.
+- **No /trade verb** — a wandering trader (sakura sapling!) was a dead UI; the human
+  haggled, the bot could only fund. mineflayer supports openVillager; add /trade.
+- **Verb collision**: a blocking /smelt's end-collect fails if a movement verb drags the
+  body away mid-burn (`got:null`, glass stranded in the furnace till the next load).
+- **Chat kicks ×2** (chat_validation_failed→socketClosed), both after multi-line paced
+  sends; watchdog rebirth drill ran clean both times. Pacing interval needs to be
+  configurable; try 3.5s / 2-line cap.
+- **Terraform pilot method** (no code): datum = feet; eye-rays cannot verify AIR (NOLOS
+  is ambiguous, and the block underfoot is invisible to every sense) — walk transects
+  and read your own y; probe loops must print NOLOS explicitly or silence lies.
+
 ## 2026-07-21 — the blades get names; the hold rule learns to yield
 
 The day the enchanting quarter came alive: 15-shelf ring raised at the homestead, the

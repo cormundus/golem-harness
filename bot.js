@@ -440,6 +440,9 @@ reflexes.push({
   name: 'unstuck', on: true, active: false,
   _lastPos: null, _stallStart: 0,
   check (bot) {
+    if (!this._hooked) {                                        // planner heartbeat hookup (07-22)
+      try { bot.on('path_update', () => { this._lastPathUpdate = Date.now() }); this._hooked = true } catch (e) {}
+    }
     let moving = false
     try { moving = bot.pathfinder.isMoving() } catch (e) {}
     if (!moving) { this._stallStart = 0; this._lastPos = null; return false }
@@ -449,7 +452,12 @@ reflexes.push({
     this._lastPos = p.clone()
     if (advanced) { this._stallStart = 0; return false }        // still making progress
     if (!this._stallStart) { this._stallStart = Date.now(); return false }
-    return Date.now() - this._stallStart > 10000                // wedged >10s while pathing
+    const stalled = Date.now() - this._stallStart
+    // A long-goal path COMPUTATION is indistinguishable from a wedge out here (isMoving true,
+    // zero movement). While the planner still emits path_update heartbeats, give it 30s
+    // before declaring wedged — 10s patience was murdering healthy 400-block treks (07-22).
+    if (Date.now() - (this._lastPathUpdate || 0) < 8000 && stalled < 30000) return false
+    return stalled > 10000                                      // wedged >10s while pathing
   },
   async act (bot) {
     this._stallStart = 0
@@ -460,13 +468,22 @@ reflexes.push({
       for (const [dx, dy, dz] of spots) {
         const blk = bot.blockAt(b.offset(dx, dy, dz))
         if (blk && /door|fence_gate|trapdoor/.test(blk.name) && !blk.name.includes('iron')) {
+          const props = (blk.getProperties && blk.getProperties()) || {}
+          if (props.open) continue                             // already open — a blind toggle slams it shut (07-22)
           await bot.activateBlock(blk); opened = blk.name; break
         }
       }
     } catch (e) {}
+    if (opened) {
+      // The door WAS the wedge and it's open now: let the path live instead of killing the
+      // pilot's verb (07-22: safeStop here was the door-deadlock's third actor). If we're
+      // still wedged next cycle, the door is open so we fall through to the wedge-break.
+      emitEvent('reflex', 'unstuck: opened ' + opened + ' — path continues')
+      return
+    }
     safeStop()                                                 // 2) break the wedge so the pilot can re-path
     try { bot.clearControlStates() } catch (e) {}
-    emitEvent('reflex', 'unstuck: ' + (opened ? 'opened ' + opened + ' & ' : '') + 'broke a pathing wedge — pilot, re-check the route')
+    emitEvent('reflex', 'unstuck: broke a pathing wedge — pilot, re-check the route')
   }
 })
 
@@ -4770,19 +4787,30 @@ app.get('/safe_goto', async (req, res) => {
     claimLane('safe_goto', 300000)                 // soft lane, long trek duration (07-21)
     const isTimeout = (e) => /took too long|timeout|timed out/i.test(e.message || '')
 
-    // first: a single direct attempt
-    try {
-      await bot.pathfinder.goto(new goals.GoalNear(x, y, z, range))
-      const pos = bot.entity.position
-      const arrived = pos.distanceTo(dest) <= range + 1
-      return ok(res, verbose
-        ? { arrived, method: 'direct', pos: round(pos), dist: +pos.distanceTo(dest).toFixed(1) }
-        : { arrived, pos: round(pos) })
-    } catch (e) {
-      if (!isTimeout(e)) {
-        // non-timeout failure (blocked/no path): report position, don't segment-loop
+    // first: a direct attempt. "Path was stopped" = a reflex intervened mid-path (e.g.
+    // unstuck clearing a door) — the blocker is often gone by now, so retry ONCE before
+    // reporting failure (07-22: giving up here made every reflex assist kill the verb).
+    let stopRetried = false
+    for (;;) {
+      try {
+        await bot.pathfinder.goto(new goals.GoalNear(x, y, z, range))
         const pos = bot.entity.position
-        return ok(res, { arrived: false, method: 'direct', reason: e.message, pos: round(pos) })
+        const arrived = pos.distanceTo(dest) <= range + 1
+        return ok(res, verbose
+          ? { arrived, method: 'direct', pos: round(pos), dist: +pos.distanceTo(dest).toFixed(1) }
+          : { arrived, pos: round(pos) })
+      } catch (e) {
+        if (/path was stopped/i.test(e.message || '') && !stopRetried) {
+          stopRetried = true
+          await new Promise(r => setTimeout(r, 1500))
+          continue
+        }
+        if (!isTimeout(e)) {
+          // non-timeout failure (blocked/no path): report position, don't segment-loop
+          const pos = bot.entity.position
+          return ok(res, { arrived: false, method: 'direct', reason: e.message, pos: round(pos) })
+        }
+        break                                                   // timeout → segmented recovery
       }
     }
 
