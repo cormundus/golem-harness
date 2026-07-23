@@ -5,6 +5,36 @@ bit us in the world first. Each fix records the wound that taught it — the rea
 the point, not just the diff. Dates are play-sessions, not releases. Full commit messages
 carry more detail (`git log`); deeper war stories live in FIELD-GUIDE.md.
 
+## 2026-07-23 — the bones are laid; the deep collects a toll
+
+Outline day: the helmsman placed one plank ("that's the center — go from there"), the
+pilot drew 23×27 around it and laid the full deepslate footer, verified block by block
+with `?then=blockat`. In between: a "safe" deepslate run into the east deep that became
+the arc's richest bug hunt and cost **death #9**.
+
+### Learned (wounds queued, no code yet — next session's forge list)
+- **Ranged-chip blind spot (death #9):** a hostile plinked 0.7/tick up the pilot's own
+  stair shaft — 14 hits, body never moved, every hurt event said "combat reflex has it."
+  The reflex names ranged attackers and does NOTHING about them: no charge, no kite, no
+  cover. It needs a ranged-damage response (break eye-line — sidestep or place a block —
+  or close the distance), and hurt events must say what the reflex is *doing*. The API
+  also returned empty replies mid-crisis — investigate event-loop starvation in combat.
+- **dig_stair cannot bridge cavities** ("no step to stand on, nothing to place" — with
+  72 placeable blocks in pockets). The deep is swiss cheese; a stair verb that quits at
+  every void doesn't climb out of anywhere real. Working algorithm prototyped pilot-side
+  (three script iterations, each taught by the last): clear cells top-down with settle
+  waits for falling blocks, verified floor placement with fill-below fallback, stuck/HP/
+  food aborts. Port it.
+- **Gravel is a killer with no manual page:** column suffocation took 5.5 hearts, and the
+  wound FROZE — suffocation damage had drained hunger below the regen-18 threshold. Dig
+  falling blocks from the side, wait out the column, double-read air, never stand under
+  the dig cell. Driver loops need an HP abort AND a food floor. FIELD-GUIDE gets a gravel
+  section.
+- **The old escape stair is down-only for the pathfinder** — descending drops off ledges
+  that read as walls on the return. Walked edges have direction; the map should say so.
+- **Chat-kick cadence, refined:** all three of today's kicks followed 3-line paced sends.
+  Pilot discipline until the pacing is configurable: two lines max per send.
+
 ## 2026-07-22 — the door deadlock falls; the hill pays for the hole
 
 Aria's crowning day and the first terraforming lesson — and the day the harness's oldest
