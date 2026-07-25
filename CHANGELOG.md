@@ -5,6 +5,37 @@ bit us in the world first. Each fix records the wound that taught it — the rea
 the point, not just the diff. Dates are play-sessions, not releases. Full commit messages
 carry more detail (`git log`); deeper war stories live in FIELD-GUIDE.md.
 
+## 2026-07-25 — the glass skin rises; the walls verb forgets to eat
+
+Autonomy session ("I'll leave it all in your hands"): 18 logs from a helmsman-led
+forest, charcoal doctrine adopted at his catch ("we turn logs to charcoal around
+here" — 144 smelts vs my plank math's 108), 75 sand smelted, 320 panes crafted
+true-to-count and laid by a single `/walls` pass — two-thirds of the greenhouse
+skin, footer and corner posts correctly skipped. A vault blueprint was drafted in
+code while the sand cooked (parametric arch → JSON manifest), and a doctrine was
+settled furnace-side: **design anywhere, place with honest hands — the fairness
+line is where the blocks come from, not where the thinking happens.** The manifest
+driver is queued to become a harness verb once the vault proves it.
+
+### Learned (wounds queued, no code yet)
+- **`/walls` burned food 20→0 across its ~20-minute loop and starvation chipped
+  20→14 HP** before the pilot caught it. Long loop verbs (walls/roof/build/gather)
+  need a food floor: at ≤6 the loop eats from pockets or aborts honestly. Bonus lie:
+  the hurt line said "combat reflex engaging" for environmental damage — the 07-24
+  narration rewrite defaults wrong when the attribution has no entity and no
+  projectile; it should name the cause guess instead.
+- **`/withdraw` count drains at most one stack** (asked 139, got 11) — same disease
+  as `/toss`. And **`/smelt`'s end-collect ran before the furnace finished** (asked
+  27, got 11; ~16 outputs left cooking) — the collect must wait out the burn or poll
+  the output slot until the input empties.
+- **`/gather` and `/mine` wedge on trees three ways:** standing on the trunk-top they
+  want; "no reachable log left" in a living forest (leaf-shrouded trunks fail the
+  reach check); and a 10-minute adjacent-to-target spin on a stale find. All need a
+  no-progress watchdog, leaf-aware reach, and re-verify before the walk.
+- **Manners events are pilot work items, not scenery** — two doors left open on a
+  gather trek freed the livestock; the events said so in real time and the pilot let
+  them scroll past. The helmsman re-penned the animals. Owned in the open.
+
 ## 2026-07-24 — the spine learns to duck
 
 Forge-first session (the helmsman's call): before the glass skin goes up, death #9's
