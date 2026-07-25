@@ -1453,9 +1453,24 @@ bot.on('health', async () => {
       // worst response — the combat reflex owns it; we only narrate.
       const attrib = (lastAttrib && Date.now() - lastAttrib.t < 1500) ? lastAttrib : null
       if (attrib) {
+        // DEATH #9 (07-23): this line used to say "combat reflex has it" on attribution alone —
+        // fourteen times, while the watcher was silently dropping the attacker at its distance
+        // gate. Now the hurt event reports what the body is DOING, and a ranged hit triggers
+        // the cover response HERE, directly — not two hops later through a gate that can drop it.
+        let action = 'combat reflex engaging'
+        const cr = reflexes.find(r => r.name === 'combat')
+        if (attrib.ranged) {
+          if (attrib.entity && cr && cr.on) { action = 'RANGED — breaking eye-line'; try { cr.takeCover(bot, attrib.entity.position, attrib.desc) } catch (e) {} }
+          else if (!attrib.entity) action = 'RANGED, shooter unseen — PILOT: move or seal NOW'
+          else action = 'RANGED and combat reflex is OFF — PILOT: move or seal NOW'
+        } else if (attrib.entity && attrib.entity.position.distanceTo(bot.entity.position) > 48) {
+          action = 'attacker beyond reflex reach — PILOT must act'
+        } else if (!cr || !cr.on) {
+          action = 'combat reflex is OFF — PILOT must act'
+        }
         if (Date.now() - lastHurtEmit > 2000) {
           lastHurtEmit = Date.now()
-          emitEvent('hurt', `took ${dmg} — ${attrib.desc} — HP ${bot.health}/20 — combat reflex has it`)
+          emitEvent('hurt', `took ${dmg} — ${attrib.desc} — HP ${bot.health}/20 — ${action}`)
         }
         lastHp = bot.health
         return
@@ -1571,15 +1586,29 @@ bot.once('spawn', () => {
       try {
         if (!bot.entity || packet.entityId !== bot.entity.id) return
         const causeId = (packet.sourceCauseId || 0) - 1
+        const directId = (packet.sourceDirectId || 0) - 1
         const cause = causeId >= 0 ? bot.entities[causeId] : null
-        if (!cause) { lastAttrib = { t: Date.now(), desc: 'no attacker (environmental)', entity: null }; return }
+        const direct = directId >= 0 ? bot.entities[directId] : null
+        // PROJECTILE TELL (07-23, death #9: the events said "zombie E ~33" while something plinked
+        // me at bow range — almost certainly a skeleton wearing a misattributed name. Whatever the
+        // cause entity claims to be, cause≠direct means the hit ARRIVED as a projectile, and the
+        // response must be ranged doctrine regardless of the name on the shaft.)
+        const ranged = !!(direct && (!cause || direct.id !== cause.id))
+        if (!cause) {
+          lastAttrib = ranged
+            ? { t: Date.now(), desc: 'projectile, shooter unseen', entity: null, ranged: true }
+            : { t: Date.now(), desc: 'no attacker (environmental)', entity: null, ranged: false }
+          return
+        }
         const here = bot.entity.position
         const dir = compass(cause.position.x - here.x, cause.position.z - here.z)
         const dist = Math.round(cause.position.distanceTo(here))
         const who = cause.username || cause.name || 'unknown'
-        lastAttrib = { t: Date.now(), desc: `${who} ${dir} ~${dist}`, entity: cause }
-        AGGRO_CONFIRMED.set(cause.id, { name: who, t: Date.now() })
-        console.log(`[combat] attributed: hit by ${who} ${dir} ~${dist}`)
+        // ranged is STICKY per attacker: one proven arrow makes it a ranged threat for the episode
+        const wasRanged = (AGGRO_CONFIRMED.get(cause.id) || {}).ranged || false
+        lastAttrib = { t: Date.now(), desc: `${who} ${dir} ~${dist}${ranged ? ' (projectile)' : ''}`, entity: cause, ranged: ranged || wasRanged }
+        AGGRO_CONFIRMED.set(cause.id, { name: who, t: Date.now(), ranged: ranged || wasRanged })
+        console.log(`[combat] attributed: hit by ${who} ${dir} ~${dist}${ranged ? ' (projectile)' : ''}`)
       } catch (e) {}
     })
     console.log('[bot] damage attribution wired')
@@ -1625,7 +1654,7 @@ function entityEngageable (en) {
 reflexes.unshift({
   name: 'combat', on: true, active: false,
   _hist: new Map(), _lastNarrate: new Map(), _threat: null,
-  _fill: null, _fillT: 0, _fillSeed: null, _fleeUntil: 0,
+  _fill: null, _fillT: 0, _fillSeed: null, _fleeUntil: 0, _coverUntil: 0,
   // FLEE LATCH (07-16, the first-death autopsy: twelve 'disengaging' events, zero escape — every
   // 300ms re-entry safeStop'd the previous flee goal and re-planned from scratch, so the body
   // SHUFFLED IN PLACE while a same-speed drowned ate it 1.4 at a time. A flee is set ONCE, held
@@ -1658,6 +1687,47 @@ reflexes.unshift({
     } catch (e) {}
     if (why) emitEvent('combat', why)                    // ONE event per flee episode, not twelve
   },
+  // RANGED-CHIP RESPONSE (07-23, death #9's patch: a skeleton plinked me dead up my own stair
+  // shaft — fourteen hits at 0.7, position never changed, every event claiming the reflex "has
+  // it" while the distance gate dropped the attacker before scoring. The answer to arrows you
+  // can't answer is GEOMETRY: stop being seen. Sidestep to the nearest standable cell the
+  // attacker's eye can't reach; no such cell within 3 = flee the sightline at a sprint.
+  // One cover move per 4s — re-entries bounce off the latch, like the flee latch.)
+  takeCover (bot, threatPos, who) {
+    const now = Date.now()
+    if (now < this._coverUntil || now < this._fleeUntil) return
+    if (laneBlocks('interrupt')) { laneNarrate('take-cover'); return }
+    this._coverUntil = now + 4000
+    try {
+      const here = bot.entity.position.floored()
+      const eye = threatPos.offset(0, 1.62, 0)
+      const stand = (x, y, z) => {
+        const f = bot.blockAt(new Vec3(x, y - 1, z)); if (!f || f.boundingBox !== 'block') return false
+        const a = bot.blockAt(new Vec3(x, y, z)); const h = bot.blockAt(new Vec3(x, y + 1, z))
+        return !!(a && h && a.boundingBox === 'empty' && h.boundingBox === 'empty' &&
+          !/water|lava/.test(a.name) && !/water|lava/.test(h.name))
+      }
+      let bestCell = null; let bestD = Infinity
+      for (let dx = -3; dx <= 3; dx++) for (let dz = -3; dz <= 3; dz++) {
+        if (!dx && !dz) continue
+        for (let dy = -1; dy <= 1; dy++) {
+          const x = here.x + dx, y = here.y + dy, z = here.z + dz
+          if (!stand(x, y, z)) continue
+          if (losClear(eye, new Vec3(x + 0.5, y + 1.62, z + 0.5))) continue   // still in the sightline
+          const d2 = dx * dx + dy * dy + dz * dz
+          if (d2 < bestD) { bestD = d2; bestCell = { x, y, z } }
+        }
+      }
+      if (bestCell) {
+        safeStop()
+        bot.pathfinder.setGoal(new goals.GoalBlock(bestCell.x, bestCell.y, bestCell.z))
+        emitEvent('combat', `ranged chip from ${who || '?'} — BREAKING EYE-LINE: cover ${compass(bestCell.x - here.x, bestCell.z - here.z)} at (${bestCell.x},${bestCell.y},${bestCell.z})`)
+        return
+      }
+    } catch (e) {}
+    this._coverUntil = 0                                 // no cover found — hand it to the flee latch
+    this.fleeFrom(bot, threatPos, `ranged chip from ${who || '?'} — no cover within 3, FLEEING the sightline`, 'interrupt')
+  },
   // FAIRNESS GATE fill (07-16, the confessed leak from the first Normal cave crawl): the watcher
   // read raw bot.entities — server x-ray — and tracked a zombie through solid rock that /entities
   // honestly hid. Same law as ore and eyes now: sealed behind rock = imperceptible; it may be
@@ -1685,7 +1755,11 @@ reflexes.unshift({
           (cls === 'player' && now < threatDebugUntil)
         if (!scoreable) continue
         const dist = e.position.distanceTo(here)
-        if (dist > 24) { this._hist.delete(e.id); continue }
+        // DEATH #9 (07-23): this gate ran BEFORE the confirmed bypass, so a skeleton plinking
+        // from ~33 was discarded every cycle — fourteen hits, zero responses, while the hurt
+        // line swore the reflex "has it". What HIT me stays scored out to 48; everything
+        // unproven keeps the old 24-block horizon.
+        if (dist > (confirmed ? 48 : 24)) { this._hist.delete(e.id); continue }
         // confirmed attackers bypass the sight gate (whatever HIT me announced itself); everything
         // else must share my connected air. History is kept, not wiped — brief occlusion mid-chase
         // shouldn't amnesia the pursuit evidence, the sample just doesn't accrue while unseen.
@@ -1836,6 +1910,11 @@ reflexes.unshift({
             await new Promise(r => setTimeout(r, 500))
             continue
           }
+          // DEATH #9's LESSON (07-23): against a PROVEN ranged attacker, the shield-stare IS the
+          // death posture — it holds the body still inside the firing solution. If the bow
+          // couldn't answer (out of band, no LOS, no arrows), break the eye-line instead.
+          const conf9 = AGGRO_CONFIRMED.get(t.e.id)
+          if (conf9 && conf9.ranged) { this.takeCover(bot, t.e.position, label); return }
           guardUp()                                           // hold ground, face it, shield up
           await bot.lookAt(t.e.position.offset(0, 1.2, 0), true)
           await new Promise(r => setTimeout(r, 250))

@@ -5,6 +5,43 @@ bit us in the world first. Each fix records the wound that taught it — the rea
 the point, not just the diff. Dates are play-sessions, not releases. Full commit messages
 carry more detail (`git log`); deeper war stories live in FIELD-GUIDE.md.
 
+## 2026-07-24 — the spine learns to duck
+
+Forge-first session (the helmsman's call): before the glass skin goes up, death #9's
+blind spot gets closed. The autopsy found not one failure but three stacked ones — the
+attacker was dropped, the event lied about it, and even a kept attacker had no answer.
+
+### Fixed — the ranged-chip blind spot (death #9, LIVE VALIDATION PENDING)
+- **The distance gate ran before the confirmed bypass.** `check()` discarded anything
+  past 24 blocks *including attackers that had just hit me* — the shaft skeleton at ~33
+  was confirmed fourteen times and dropped fourteen times, so `act()` never saw it.
+  Confirmed attackers now stay scored out to 48; unproven threats keep the 24 horizon.
+- **The damage wire learned the projectile tell.** `sourceCauseId ≠ sourceDirectId`
+  means the hit arrived as a projectile, whatever name the server pins on the shooter
+  (death #9's "zombie E ~33" was almost certainly a skeleton misattributed). Ranged is
+  sticky per attacker for the aggro episode, and attribution lines now carry
+  "(projectile)".
+- **New reflex move: `takeCover`.** The answer to arrows you can't answer is geometry —
+  stop being seen. Scans standable cells within 3 for one the attacker's eye can't
+  reach (losClear from *their* eye, not mine), paths there; if no cover exists, flees
+  the sightline at a sprint via the flee latch. 4s re-entry latch, interrupt-class on
+  the pilot lane (passes soft claims, defers to /brace).
+- **The shield-stare is dead against archers.** In the standoff band, a proven ranged
+  attacker the bow couldn't answer (out of band, no LOS, no arrows) now triggers
+  takeCover instead of guard-up-and-hold — the stare held the body inside the firing
+  solution, which is exactly the death posture.
+- **Hurt events report what the body is DOING, not a claim of custody.** "combat reflex
+  has it" fired on attribution alone while the watcher dropped the target. The hurt
+  handler now kicks takeCover *directly* on ranged hits (no 300ms-watcher hop that can
+  drop it) and narrates honestly: "RANGED — breaking eye-line", "shooter unseen —
+  PILOT: move or seal NOW", "combat reflex is OFF — PILOT must act".
+
+### Still open from death #9
+- **Empty API replies mid-crisis** (seal placeitems died as JSON parse errors while the
+  arrows fell) — event-loop starvation under combat is unexplained; the takeCover path
+  runs in-process and doesn't cross the HTTP layer, which shrinks the blast radius but
+  isn't the diagnosis.
+
 ## 2026-07-23 — the bones are laid; the deep collects a toll
 
 Outline day: the helmsman placed one plank ("that's the center — go from there"), the
